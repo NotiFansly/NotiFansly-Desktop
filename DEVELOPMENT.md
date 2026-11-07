@@ -51,6 +51,21 @@ Written temp-then-rename; see `src/state.rs`.
   generated from `assets/icon.png` with sips/iconutil) and ad-hoc signs
   the bundle.
 
+## Window-manager behavior
+
+- Close-to-tray is implemented per platform in `src/wm.rs`. GPUI only
+  exposes minimize, which Hyprland ignores entirely and on Windows lands
+  the window in the taskbar instead of the tray. Hyprland gets the real
+  thing: the window is parked on the hidden `special:notifansly`
+  workspace via the compositor IPC socket (current `hl.*` dispatcher
+  grammar) and moved back on tray Show. Windows finds its HWND by title
+  and SW_HIDEs it (hidden windows leave alt-tab/taskbar - tray
+  semantics), restored with SW_SHOW + foreground. Other compositors and
+  macOS keep the minimize fallback.
+- The Windows exe icon is loaded by gpui via LoadImageW resource id 1,
+  hence `1 ICON` (numeric) in assets/icon.rc - a named icon resource is
+  silently ignored.
+
 ## Windows / macOS notes
 
 - **A Windows *release* binary cannot be cross-compiled from Linux.**

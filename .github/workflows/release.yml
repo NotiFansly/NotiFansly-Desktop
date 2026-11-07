@@ -82,11 +82,11 @@ jobs:
         shell: bash
         run: |
           BUNDLE="NotiFansly Desktop.app"
-          rm -rf "$BUNDLE" .iconset-tmp
+          rm -rf "$BUNDLE" tmp.iconset
           mkdir -p "$BUNDLE/Contents/MacOS" "$BUNDLE/Contents/Resources"
           cp "target/release/${{ matrix.binary_name }}" "$BUNDLE/Contents/MacOS/${{ matrix.binary_name }}"
           cp assets/Info.plist "$BUNDLE/Contents/Info.plist"
-          ICONSET=".iconset-tmp"
+          ICONSET="tmp.iconset"
           mkdir -p "$ICONSET"
           sips -z 16 16     assets/icon.png --out "$ICONSET/icon_16x16.png"      > /dev/null
           sips -z 32 32     assets/icon.png --out "$ICONSET/icon_16x16@2x.png"   > /dev/null

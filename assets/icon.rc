@@ -1,6 +1,8 @@
-// Windows resource: exe icon (Explorer / taskbar / window class) plus
-// version metadata. Compiled by embed-resource only when targeting Windows.
-APP_ICON ICON "assets/icon.ico"
+// Windows resource: exe icon plus version metadata, compiled by
+// embed-resource on Windows targets. The icon MUST keep numeric id 1:
+// gpui's Windows backend loads the window-class icon via LoadImageW
+// with resource id 1, so a named icon is silently ignored.
+1 ICON "assets/icon.ico"
 
 1 VERSIONINFO
 FILEVERSION 0,1,0,0

@@ -18,6 +18,7 @@ mod state;
 mod theme;
 mod tray;
 mod widgets;
+mod wm;
 
 use std::sync::mpsc;
 use std::sync::OnceLock;
@@ -91,10 +92,18 @@ fn main() {
                 window.set_app_id("notifansly-desktop");
 
                 // Closing the window parks the app in the tray instead of
-                // exiting - the server keeps syncing either way.
+                // exiting - the server keeps syncing either way. Where the
+                // platform's minimize is wrong (Hyprland ignores it; on
+                // Windows it lands in the taskbar, not the tray) the wm
+                // module does the real hide; minimize remains the fallback
+                // elsewhere.
                 window.on_window_should_close(cx, |w, _| {
                     eprintln!("[window] close requested -> hiding to tray");
+                    crate::wm::hide_to_tray();
+                    #[cfg(not(target_os = "windows"))]
                     w.minimize_window();
+                    #[cfg(target_os = "windows")]
+                    let _ = w; // minimize would undo the SW_HIDE above
                     false
                 });
 
@@ -113,6 +122,7 @@ fn main() {
                             while let Ok(cmd) = tray_rx.try_recv() {
                                 match cmd {
                                     TrayCommand::Show => {
+                                        crate::wm::restore_from_tray();
                                         let _ = cx.update(|cx| {
                                             let _ = handle
                                                 .update(cx, |_, window, _| window.activate_window());
