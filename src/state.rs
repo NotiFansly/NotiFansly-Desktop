@@ -24,6 +24,8 @@ pub struct PersistedState {
     pub username: Option<String>,
     #[serde(default)]
     pub sync_key: Option<String>,
+    #[serde(default)]
+    pub appearance: Option<String>,
 }
 
 impl Default for PersistedState {
@@ -34,6 +36,7 @@ impl Default for PersistedState {
             fansly_user_id: None,
             username: None,
             sync_key: None,
+            appearance: None,
         }
     }
 }

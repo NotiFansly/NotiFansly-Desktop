@@ -1,16 +1,22 @@
 //! Root view: app model, async flows, and the Welcome / Dashboard screens.
+//!
+//! Layout and colour roles follow the yap-a-thon dock: surface cards on a
+//! calm background, rounded status pills that read from the edge of the
+//! screen, named text sizes, and the NotiFansly pink accent.
 
 use std::sync::Arc;
 use std::time::Duration;
 
 use gpui::{
-    App, AppContext, AsyncApp, ClipboardItem, Context, Entity, InteractiveElement, IntoElement,
-    ParentElement, Render, StatefulInteractiveElement, Styled, Task, Window, div, px,
+    AnyElement, App, AppContext, AsyncApp, ClipboardItem, Context, Entity, FontWeight,
+    InteractiveElement, IntoElement, ParentElement, Render, SharedString, StatefulInteractiveElement,
+    Styled, Task, Window, div, img, px,
 };
 
 use crate::api::{ApiClient, ConnectResponse, StatusResponse};
 use crate::state::{self, PersistedState};
-use crate::widgets::{ButtonRole, InputKind, InputSubmitted, Theme, button, pill};
+use crate::theme::{self, Appearance, Palette, text};
+use crate::widgets::{ButtonRole, InputKind, InputSubmitted, button, card, note, pill};
 
 const POLL_ROUNDS: u32 = 10;
 
@@ -24,6 +30,9 @@ pub struct RootView {
     client: Arc<ApiClient>,
     pub saved: PersistedState,
     screen: Screen,
+    appearance: Appearance,
+    /// Brand mark, decoded once from the embedded asset.
+    brand_icon: Arc<gpui::Image>,
 
     // async-operation state
     busy: bool,    // connect/connect-like op in flight
@@ -63,12 +72,22 @@ impl RootView {
             input.set_value(saved.api_url().to_string(), cx);
         });
 
+        let appearance = Appearance::from_id(saved.appearance.as_deref().unwrap_or("dark"));
+        theme::set_appearance(appearance);
+        let brand_icon = Arc::new(gpui::Image::from_bytes(
+            gpui::ImageFormat::Png,
+            include_bytes!("../assets/icon.png").to_vec(),
+        ));
+
         let connected = saved.is_connected();
         cx.new(|cx| {
             // Enter in the claim input submits; Enter in the API-URL editor saves.
             cx.subscribe(
                 &claim_input,
-                |this: &mut Self, _input: gpui::Entity<crate::widgets::TextInput>, event: &InputSubmitted, cx: &mut Context<Self>| {
+                |this: &mut Self,
+                 _input: gpui::Entity<crate::widgets::TextInput>,
+                 event: &InputSubmitted,
+                 cx: &mut Context<Self>| {
                     if !event.value.trim().is_empty() {
                         this.connect(cx);
                     }
@@ -77,7 +96,10 @@ impl RootView {
             .detach();
             cx.subscribe(
                 &api_url_input,
-                |this: &mut Self, _input: gpui::Entity<crate::widgets::TextInput>, _event: &InputSubmitted, cx: &mut Context<Self>| {
+                |this: &mut Self,
+                 _input: gpui::Entity<crate::widgets::TextInput>,
+                 _event: &InputSubmitted,
+                 cx: &mut Context<Self>| {
                     this.save_api_url(cx);
                 },
             )
@@ -91,6 +113,8 @@ impl RootView {
                     Screen::Welcome
                 },
                 saved,
+                appearance,
+                brand_icon,
                 busy: false,
                 syncing: false,
                 error: None,
@@ -106,7 +130,12 @@ impl RootView {
         })
     }
 
+    fn palette(&self) -> Palette {
+        theme::theme_for(self.appearance)
+    }
+
     fn persist(&mut self) {
+        self.saved.appearance = Some(self.appearance.id().to_string());
         state::save(&self.saved);
     }
 
@@ -350,9 +379,16 @@ impl RootView {
         cx.notify();
     }
 
-    pub fn open_dashboard(&mut self, cx: &mut Context<Self>) {
+    pub fn open_website(&mut self, cx: &mut Context<Self>) {
         let url = self.saved.dashboard_url().to_string();
         let _ = webbrowser::open(&url);
+        cx.notify();
+    }
+
+    pub fn toggle_appearance(&mut self, cx: &mut Context<Self>) {
+        self.appearance = self.appearance.toggle();
+        theme::set_appearance(self.appearance);
+        self.persist();
         cx.notify();
     }
 
@@ -404,47 +440,85 @@ impl RootView {
         self.syncing = false;
         self.reveal_key = false;
         self.screen = Screen::Welcome;
-        self.set_notice("Disconnected on this device. The server keeps your account - paste a fresh management link to reconnect.", cx);
+        self.set_notice(
+            "Disconnected on this device. The server keeps your account - paste a fresh management link to reconnect.",
+            cx,
+        );
     }
 
     // -- rendering ------------------------------------------------------------
 
-    fn banner(&self) -> Option<gpui::AnyElement> {
-        let t = Theme::dark();
-        self.error
-            .clone()
-            .map(|msg| {
+    /// Brand header, shared by both screens: the NotiFansly mark, the app
+    /// name, and the light/dark toggle.
+    fn header(&mut self, cx: &mut Context<Self>) -> impl IntoElement {
+        let t = self.palette();
+        let is_dark = self.appearance == Appearance::Dark;
+        let other = if is_dark { "☀" } else { "☾" };
+
+        div()
+            .flex()
+            .flex_row()
+            .items_center()
+            .gap_2()
+            .child(
+                img(gpui::ImageSource::Image(self.brand_icon.clone()))
+                    .w(px(30.0))
+                    .h(px(30.0))
+                    .flex_shrink(),
+            )
+            .child(
                 div()
-                    .px_3()
-                    .py_2()
+                    .text_size(text::TITLE)
+                    .font_weight(FontWeight::BOLD)
+                    .text_color(t.text)
+                    .child("NotiFansly"),
+            )
+            .child(
+                div()
+                    .text_size(text::LABEL)
+                    .text_color(t.muted)
+                    .child("Desktop"),
+            )
+            .child(div().flex_1())
+            .child(
+                div()
+                    .id(gpui::ElementId::Name(SharedString::from("appearance-toggle")))
+                    .flex()
+                    .items_center()
+                    .justify_center()
+                    .w(px(30.0))
+                    .h(px(30.0))
                     .rounded_md()
                     .bg(t.surface)
                     .border_1()
-                    .border_color(t.danger)
-                    .text_color(t.danger)
-                    .text_size(px(12.0))
-                    .child(msg)
-                    .into_any_element()
-            })
-            .or_else(|| {
-                self.notice.clone().map(|msg| {
-                    div()
-                        .px_3()
-                        .py_2()
-                        .rounded_md()
-                        .bg(t.surface)
-                        .border_1()
-                        .border_color(t.success)
-                        .text_color(t.success)
-                        .text_size(px(12.0))
-                        .child(msg)
-                        .into_any_element()
-                })
-            })
+                    .border_color(t.border)
+                    .cursor_pointer()
+                    .text_size(text::BODY)
+                    .text_color(t.muted)
+                    .on_click(cx.listener(|this, _e, _w, cx| this.toggle_appearance(cx)))
+                    .child(other.to_string()),
+            )
+    }
+
+    fn banner(&self) -> Option<AnyElement> {
+        let t = self.palette();
+        self.error.clone().map(|msg| {
+            div()
+                .px_3()
+                .py_2()
+                .rounded_md()
+                .bg(t.surface)
+                .border_1()
+                .border_color(t.danger)
+                .text_color(t.danger)
+                .text_size(text::LABEL)
+                .child(msg)
+                .into_any_element()
+        })
     }
 
     fn welcome_view(&mut self, _window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
-        let t = Theme::dark();
+        let t = self.palette();
 
         let steps = [
             (
@@ -459,7 +533,7 @@ impl RootView {
         ];
 
         div()
-            .id(gpui::ElementId::Name("welcome".into()))
+            .id(gpui::ElementId::Name(SharedString::from("welcome")))
             .flex()
             .flex_col()
             .gap_3()
@@ -471,57 +545,48 @@ impl RootView {
                     .gap_1()
                     .child(
                         div()
-                            .text_size(px(22.0))
-                            .font_weight(gpui::FontWeight::BOLD)
+                            .text_size(text::VALUE)
+                            .font_weight(FontWeight::BOLD)
                             .text_color(t.text)
                             .child("Connect your Fansly account"),
                     )
-                    .child(
-                        div()
-                            .text_size(px(13.0))
-                            .text_color(t.text_muted)
-                            .child("Management link tokens - no passwords, no API keys."),
-                    ),
+                    .child(note(
+                        "Management link tokens - no passwords, no API keys.",
+                    )),
             )
             .child(
-                div()
-                    .flex()
-                    .flex_col()
-                    .gap_2()
-                    .p_3()
-                    .rounded_md()
-                    .bg(t.surface)
-                    .border_1()
-                    .border_color(t.border)
-                    .children(steps.into_iter().map(|(n, text)| {
+                card().flex().flex_col().gap_2().children(steps.into_iter().map(
+                    |(n, text_value)| {
                         div()
                             .flex()
                             .flex_row()
-                            .gap_2()
+                            .items_center()
+                            .gap_3()
                             .child(
                                 div()
                                     .flex()
                                     .items_center()
                                     .justify_center()
-                                    .w(px(18.0))
-                                    .h(px(18.0))
+                                    .w(px(20.0))
+                                    .h(px(20.0))
                                     .rounded_full()
                                     .bg(t.accent_dim)
                                     .border_1()
                                     .border_color(t.accent)
-                                    .text_size(px(10.0))
-                                    .font_weight(gpui::FontWeight::SEMIBOLD)
+                                    .text_size(text::LABEL)
+                                    .font_weight(FontWeight::SEMIBOLD)
                                     .text_color(t.accent)
                                     .child(n.to_string()),
                             )
                             .child(
                                 div()
                                     .flex_1()
-                                    .text_size(px(12.0))
-                                    .text_color(t.text_muted)
-                                    .child(text.to_string()),
+                                    .text_size(text::BODY)
+                                    .text_color(t.muted)
+                                    .child(text_value.to_string()),
                             )
-                    })),
+                    },
+                )),
             )
             .child(self.claim_input.clone())
             .child(
@@ -555,22 +620,17 @@ impl RootView {
     }
 
     fn api_url_row(&mut self, cx: &mut Context<Self>) -> impl IntoElement {
-        let t = Theme::dark();
+        let t = self.palette();
         if self.editing_api_url {
             return div()
-                .id(gpui::ElementId::Name("api-url-edit".into()))
+                .id(gpui::ElementId::Name(SharedString::from("api-url-edit")))
                 .flex()
                 .flex_col()
                 .gap_2()
-                .pt_2()
+                .pt_3()
                 .border_t_1()
                 .border_color(t.border)
-                .child(
-                    div()
-                        .text_size(px(11.0))
-                        .text_color(t.text_muted)
-                        .child("Sync API server"),
-                )
+                .child(note("Sync API server"))
                 .child(self.api_url_input.clone())
                 .child(
                     div()
@@ -597,36 +657,37 @@ impl RootView {
                 .into_any_element();
         }
         div()
-            .id(gpui::ElementId::Name("api-url-view".into()))
+            .id(gpui::ElementId::Name(SharedString::from("api-url-view")))
             .flex()
             .flex_row()
             .items_center()
-            .justify_between()
-            .pt_2()
+            .gap_2()
+            .pt_3()
             .border_t_1()
             .border_color(t.border)
             .child(
                 div()
-                    .text_size(px(11.0))
-                    .text_color(t.text_muted)
+                    .flex_1()
+                    .text_size(text::LABEL)
+                    .text_color(t.muted)
                     .child(format!("Sync API: {}", self.client.api_url())),
             )
             .child(
                 div()
-                    .id(gpui::ElementId::Name("api-url-toggle".into()))
+                    .id(gpui::ElementId::Name(SharedString::from("api-url-toggle")))
                     .cursor_pointer()
-                    .text_size(px(11.0))
+                    .text_size(text::LABEL)
                     .text_color(t.accent)
-                    .on_click(cx.listener(
-                        |this: &mut Self, _e, _w, cx| this.toggle_api_url_editor(cx),
-                    ))
+                    .on_click(cx.listener(|this: &mut Self, _e, _w, cx| {
+                        this.toggle_api_url_editor(cx)
+                    }))
                     .child("edit"),
             )
             .into_any_element()
     }
 
     fn dashboard_view(&mut self, _window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
-        let t = Theme::dark();
+        let t = self.palette();
         let username = self
             .status
             .as_ref()
@@ -641,10 +702,10 @@ impl RootView {
             .map(|s| s.token_status.clone())
             .unwrap_or_else(|| "unknown".to_string());
         let (token_label, token_color) = match token_status.as_str() {
-            "active" => ("token active", t.success),
-            "invalid" => ("token invalid - reconnect with a fresh link", t.danger),
-            "expired" => ("token expired - reconnect with a fresh link", t.warning),
-            _ => ("token status unknown", t.text_muted),
+            "active" => ("● TOKEN ACTIVE", t.success),
+            "invalid" => ("● TOKEN INVALID — reconnect with a fresh link", t.danger),
+            "expired" => ("● TOKEN EXPIRED — reconnect with a fresh link", t.warning),
+            _ => ("○ STATUS UNKNOWN", t.muted),
         };
 
         let last_sync = self
@@ -686,85 +747,74 @@ impl RootView {
             .or_else(|| self.saved.fansly_user_id.clone())
             .unwrap_or_default();
 
-        // Info rows: (label, value)
-        let rows: Vec<(String, String)> = vec![
-            ("Fansly ID".into(), fansly_id),
-            ("Sync method".into(), sync_method),
-            ("Last server sync".into(), last_sync),
-            ("Discord".into(), if discord_linked { "linked".into() } else { "not linked".into() }),
+        let rows: Vec<(&str, String)> = vec![
+            ("Fansly ID", fansly_id),
+            ("Sync method", sync_method),
+            ("Last server sync", last_sync),
+            (
+                "Discord",
+                if discord_linked {
+                    "linked".to_string()
+                } else {
+                    "not linked".to_string()
+                },
+            ),
         ];
 
         div()
-            .id(gpui::ElementId::Name("dashboard".into()))
+            .id(gpui::ElementId::Name(SharedString::from("dashboard")))
             .flex()
             .flex_col()
             .gap_3()
             .children(self.banner())
             .child(
-                div()
+                card()
                     .flex()
-                    .flex_row()
-                    .items_center()
-                    .justify_between()
-                    .child(
-                        div()
-                            .flex()
-                            .flex_col()
-                            .gap_1()
-                            .child(
-                                div()
-                                    .text_size(px(20.0))
-                                    .font_weight(gpui::FontWeight::BOLD)
-                                    .text_color(t.text)
-                                    .child(format!("@{username}")),
-                            )
-                            .child(pill("token-status-pill", token_label, token_color)),
-                    )
+                    .flex_col()
+                    .gap_2()
                     .child(
                         div()
                             .flex()
                             .flex_row()
+                            .items_center()
                             .gap_2()
+                            .child(pill("token-status-pill", token_label, token_color))
+                            .child(div().flex_1())
                             .child(
                                 div()
-                                    .id(gpui::ElementId::Name("open-dashboard".into()))
+                                    .id(gpui::ElementId::Name(SharedString::from(
+                                        "open-dashboard",
+                                    )))
                                     .cursor_pointer()
-                                    .text_size(px(12.0))
+                                    .text_size(text::LABEL)
                                     .text_color(t.accent)
-                                    .on_click(cx.listener(
-                                        |this: &mut Self, _e, _w, cx| this.open_dashboard(cx),
-                                    ))
+                                    .on_click(cx.listener(|this: &mut Self, _e, _w, cx| {
+                                        this.open_website(cx)
+                                    }))
                                     .child("Open web dashboard ↗"),
                             ),
-                    ),
-            )
-            .child(
-                div()
-                    .flex()
-                    .flex_col()
-                    .gap_2()
-                    .p_3()
-                    .rounded_md()
-                    .bg(t.surface)
-                    .border_1()
-                    .border_color(t.border)
+                    )
+                    .child(
+                        div()
+                            .text_size(text::VALUE)
+                            .font_weight(FontWeight::BOLD)
+                            .text_color(t.text)
+                            .child(format!("@{username}")),
+                    )
                     .children(rows.into_iter().map(|(label, value)| {
                         div()
                             .flex()
                             .flex_row()
                             .items_center()
                             .justify_between()
+                            .gap_2()
+                            .pt_2()
+                            .child(div().text_size(text::LABEL).text_color(t.muted).child(label))
                             .child(
                                 div()
-                                    .text_size(px(12.0))
-                                    .text_color(t.text_muted)
-                                    .child(label.clone()),
-                            )
-                            .child(
-                                div()
-                                    .text_size(px(12.0))
+                                    .text_size(text::LABEL)
                                     .text_color(if label == "Discord" && value == "not linked" {
-                                        t.text_muted
+                                        t.muted
                                     } else {
                                         t.text
                                     })
@@ -795,21 +845,8 @@ impl RootView {
                     )),
             )
             .child(
-                div()
-                    .flex()
-                    .flex_col()
-                    .gap_2()
-                    .p_3()
-                    .rounded_md()
-                    .bg(t.surface)
-                    .border_1()
-                    .border_color(t.border)
-                    .child(
-                        div()
-                            .text_size(px(12.0))
-                            .text_color(t.text_muted)
-                            .child("Sync key - keep it private. It restores your account on a new install together with a fresh management link."),
-                    )
+                card().flex().flex_col().gap_2()
+                    .child(note("Sync key — keep it private. It restores your account on a new install together with a fresh management link."))
                     .child(
                         div()
                             .flex()
@@ -819,8 +856,9 @@ impl RootView {
                             .child(
                                 div()
                                     .flex_1()
-                                    .text_size(px(12.0))
-                                    .font_weight(gpui::FontWeight::SEMIBOLD)
+                                    .min_w_0()
+                                    .text_size(text::BODY)
+                                    .font_weight(FontWeight::SEMIBOLD)
                                     .text_color(t.text)
                                     .child(key_shown),
                             )
@@ -844,13 +882,15 @@ impl RootView {
             )
             .child(
                 div()
-                    .id(gpui::ElementId::Name("dashboard-footer".into()))
+                    .id(gpui::ElementId::Name(SharedString::from("dashboard-footer")))
                     .flex()
                     .flex_row()
                     .items_center()
                     .justify_between()
                     .gap_2()
                     .pt_3()
+                    .border_t_1()
+                    .border_color(t.border)
                     .child(button(
                         "autostart-btn",
                         if self.launch_at_login {
@@ -877,61 +917,26 @@ impl RootView {
 
 impl Render for RootView {
     fn render(&mut self, window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
-        let t = Theme::dark();
+        let t = self.palette();
 
-        let content: gpui::Stateful<gpui::Div> = div()
-            .id(gpui::ElementId::Name("root".into()))
+        let content = div()
+            .id(gpui::ElementId::Name(SharedString::from("dock-scroll")))
             .flex()
             .flex_col()
             .bg(t.bg)
             .text_color(t.text)
             .size_full()
+            .overflow_y_scroll()
             .p_4()
             .child(
                 div()
                     .flex()
                     .flex_col()
                     .w_full()
-                    .max_w(px(460.0))
+                    .max_w(px(480.0))
                     .mx_auto()
-                    .h_full()
                     .gap_3()
-                    .child(
-                        div()
-                            .flex()
-                            .flex_row()
-                            .items_center()
-                            .gap_2()
-                            .child(
-                                div()
-                                    .flex()
-                                    .items_center()
-                                    .justify_center()
-                                    .w(px(28.0))
-                                    .h(px(28.0))
-                                    .rounded_md()
-                                    .bg(t.accent_dim)
-                                    .border_1()
-                                    .border_color(t.accent)
-                                    .text_size(px(13.0))
-                                    .font_weight(gpui::FontWeight::BOLD)
-                                    .text_color(t.accent)
-                                    .child("N"),
-                            )
-                            .child(
-                                div()
-                                    .text_size(px(15.0))
-                                    .font_weight(gpui::FontWeight::BOLD)
-                                    .text_color(t.text)
-                                    .child("NotiFansly"),
-                            )
-                            .child(
-                                div()
-                                    .text_size(px(11.0))
-                                    .text_color(t.text_muted)
-                                    .child("Desktop"),
-                            ),
-                    )
+                    .child(self.header(cx))
                     .child(match self.screen {
                         Screen::Welcome => self.welcome_view(window, cx).into_any_element(),
                         Screen::Dashboard => self.dashboard_view(window, cx).into_any_element(),

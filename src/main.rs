@@ -8,6 +8,7 @@ mod api;
 mod app;
 mod autostart;
 mod state;
+mod theme;
 mod tray;
 mod widgets;
 

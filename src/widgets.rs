@@ -1,44 +1,12 @@
-//! Theme + small GPUI 0.2.2 widget set (gpui ships no input element in this
-//! release; the TextInput below mirrors the an earlier internal GPUI codebase GPUI one).
+//! Small GPUI 0.2.2 widget set (gpui ships no input element in this
+//! release; the TextInput below mirrors the an earlier internal GPUI codebase GPUI one). Colours come
+//! from the shared theme module so light/dark switch everywhere at once.
 
 use gpui::{
-    App, AppContext, Context, ElementId, EventEmitter, FocusHandle, Hsla, InteractiveElement,
+    App, AppContext, Context, ElementId, EventEmitter, FocusHandle, InteractiveElement,
     IntoElement, KeyDownEvent, MouseButton, MouseDownEvent, ParentElement, Render, SharedString,
-    StatefulInteractiveElement, Styled, Window, div, hsla, px,
+    StatefulInteractiveElement, Styled, Window, div, px,
 };
-
-pub struct Theme {
-    pub bg: Hsla,
-    pub surface: Hsla,
-    pub surface_raised: Hsla,
-    pub border: Hsla,
-    pub text: Hsla,
-    pub text_muted: Hsla,
-    pub accent: Hsla,
-    pub accent_dim: Hsla,
-    pub success: Hsla,
-    pub warning: Hsla,
-    pub danger: Hsla,
-}
-
-impl Theme {
-    pub fn dark() -> Self {
-        // Matches the Notifansly dashboard: dark violet-slate base, pink accent.
-        Self {
-            bg: hsla(0.72, 0.28, 0.07, 1.0),
-            surface: hsla(0.72, 0.24, 0.11, 1.0),
-            surface_raised: hsla(0.72, 0.22, 0.15, 1.0),
-            border: hsla(0.72, 0.18, 0.22, 1.0),
-            text: hsla(0.0, 0.0, 0.94, 1.0),
-            text_muted: hsla(0.72, 0.12, 0.62, 1.0),
-            accent: hsla(0.91, 0.82, 0.63, 1.0), // pink-500-ish
-            accent_dim: hsla(0.91, 0.75, 0.55, 0.18),
-            success: hsla(0.38, 0.70, 0.48, 1.0),
-            warning: hsla(0.11, 0.85, 0.55, 1.0),
-            danger: hsla(0.0, 0.80, 0.58, 1.0),
-        }
-    }
-}
 
 // ---------------------------------------------------------------------------
 // TextInput
@@ -170,7 +138,7 @@ impl EventEmitter<InputSubmitted> for TextInput {}
 
 impl Render for TextInput {
     fn render(&mut self, window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
-        let t = Theme::dark();
+        let t = crate::theme::appearance();
         let is_empty = self.value.is_empty();
         let shown: String = match self.kind {
             InputKind::Password => ".".repeat(self.value.chars().count()),
@@ -200,16 +168,16 @@ impl Render for TextInput {
             )
             .flex()
             .items_center()
-            .px_2()
+            .px_3()
             .h(px(36.0))
             .w_full()
-            .bg(t.surface)
+            .bg(t.raised)
             .border_1()
             .border_color(border)
             .rounded_md()
             .cursor_text()
-            .text_size(px(13.0))
-            .text_color(if is_empty { t.text_muted } else { t.text })
+            .text_size(crate::theme::text::BODY)
+            .text_color(if is_empty { t.muted } else { t.text })
             .child(if is_empty {
                 self.placeholder.to_string()
             } else {
@@ -231,7 +199,7 @@ pub enum ButtonRole {
 
 /// A GPUI button primitive. `id` must be unique among the rendered buttons;
 /// `on_click` runs against the root view's Context.
-pub fn button< V: Render>(
+pub fn button<V: Render>(
     id: &str,
     label: &str,
     role: ButtonRole,
@@ -239,50 +207,84 @@ pub fn button< V: Render>(
     cx: &mut Context<V>,
     on_click: impl Fn(&mut V, &gpui::ClickEvent, &mut Window, &mut Context<V>) + 'static,
 ) -> impl IntoElement {
-    let t = Theme::dark();
+    button_on(id, label, role, enabled, cx, on_click)
+}
+
+fn button_on<V: Render>(
+    id: &str,
+    label: &str,
+    role: ButtonRole,
+    enabled: bool,
+    cx: &mut Context<V>,
+    on_click: impl Fn(&mut V, &gpui::ClickEvent, &mut Window, &mut Context<V>) + 'static,
+) -> impl IntoElement {
+    let t = crate::theme::appearance();
     let (bg, fg) = match role {
-        ButtonRole::Primary => (t.accent, t.bg),
-        ButtonRole::Secondary => (t.surface_raised, t.text),
-        ButtonRole::Danger => (t.danger, hsla(0.0, 0.0, 0.97, 1.0)),
+        ButtonRole::Primary => (t.accent, t.on_accent),
+        ButtonRole::Secondary => (t.raised, t.text),
+        ButtonRole::Danger => (t.raised, t.danger),
     };
+
     let mut el = div()
         .id(ElementId::Name(SharedString::from(id.to_string())))
         .flex()
         .items_center()
         .justify_center()
         .px_4()
-        .h(px(36.0))
+        .h(px(34.0))
         .rounded_md()
-        .text_size(px(13.0))
+        .text_size(crate::theme::text::BODY)
         .font_weight(gpui::FontWeight::SEMIBOLD)
         .bg(bg)
+        .border_1()
+        .border_color(match role {
+            ButtonRole::Secondary | ButtonRole::Danger => t.border,
+            ButtonRole::Primary => bg,
+        })
         .text_color(fg)
         .child(label.to_string());
     if enabled {
-        el = el
-            .cursor_pointer()
-            .on_click(cx.listener(on_click));
+        el = el.cursor_pointer().on_click(cx.listener(on_click));
     } else {
         el = el.opacity(0.5);
     }
     el
 }
 
-/// Small informational pill (status chip).
-pub fn pill(id: &str, label: &str, color: Hsla) -> impl IntoElement {
-    let t = Theme::dark();
+/// Small state pill (yap-a-thon's status chip): rounded-full, bg-coloured
+/// inset so the tone reads from the edge of a screen.
+pub fn pill(id: &str, label: &str, color: gpui::Hsla) -> impl IntoElement {
+    let t = crate::theme::appearance();
     div()
         .id(ElementId::Name(SharedString::from(id.to_string())))
         .flex()
         .items_center()
-        .h(px(22.0))
+        .h(px(24.0))
         .px_2()
-        .rounded_sm()
+        .rounded_full()
         .bg(t.bg)
-        .border_1()
-        .border_color(color)
-        .text_size(px(11.0))
-        .font_weight(gpui::FontWeight::SEMIBOLD)
+        .text_size(crate::theme::text::LABEL)
+        .font_weight(gpui::FontWeight::BOLD)
         .text_color(color)
         .child(label.to_string())
+}
+
+/// Muted supporting text.
+pub fn note(content: impl Into<SharedString>) -> impl IntoElement {
+    let t = crate::theme::appearance();
+    div()
+        .text_size(crate::theme::text::LABEL)
+        .text_color(t.muted)
+        .child(content.into())
+}
+
+/// A section card: p_4, rounded_lg, surface + border (the yap-a-thon look).
+pub fn card() -> gpui::Div {
+    let t = crate::theme::appearance();
+    div()
+        .p_4()
+        .rounded_lg()
+        .bg(t.surface)
+        .border_1()
+        .border_color(t.border)
 }
