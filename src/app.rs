@@ -535,8 +535,8 @@ impl RootView {
             .gap_2()
             .child(
                 img(gpui::ImageSource::Image(self.brand_icon.clone()))
-                    .w(px(30.0))
-                    .h(px(30.0))
+                    .w(px(36.0))
+                    .h(px(36.0))
                     .flex_shrink(),
             )
             .child(
@@ -665,7 +665,6 @@ impl RootView {
                 .flex()
                 .flex_col()
                 .gap_3()
-                .pt_4()
                 .children(self.banner())
                 .child(self.progress_dots(step, ONBOARDING_STEPS))
                 .child(
@@ -767,7 +766,7 @@ impl RootView {
                 "Open the Management Sessions page in your Fansly account.",
                 true,
             ),
-            ("2", "Click the green Create Session button.", false),
+            ("2", "Click the Create Session button.", false),
             (
                 "3",
                 "Uncheck every permission - syncing needs none of them.",
@@ -796,8 +795,8 @@ impl RootView {
                             .items_center()
                             .justify_center()
                             .flex_shrink()
-                            .w(px(22.0))
-                            .h(px(22.0))
+                            .w(px(26.0))
+                            .h(px(26.0))
                             .rounded_full()
                             .bg(t.accent_dim)
                             .border_1()
@@ -953,7 +952,7 @@ impl RootView {
                 .flex()
                 .flex_col()
                 .gap_4()
-                .pt_6()
+                .pb_4()
                 .children(self.banner())
                 .child(
                     div()
@@ -966,20 +965,20 @@ impl RootView {
                                 .flex()
                                 .items_center()
                                 .justify_center()
-                                .w(px(64.0))
-                                .h(px(64.0))
+                                .w(px(76.0))
+                                .h(px(76.0))
                                 .rounded_full()
                                 .bg(t.accent_dim)
                                 .border_1()
                                 .border_color(t.accent)
-                                .text_size(px(30.0))
+                                .text_size(px(34.0))
                                 .font_weight(FontWeight::BOLD)
                                 .text_color(t.accent)
                                 .child("✓"),
                         )
                         .child(
                             div()
-                                .text_size(px(22.0))
+                                .text_size(px(24.0))
                                 .font_weight(FontWeight::BOLD)
                                 .text_color(t.text)
                                 .text_align(gpui::TextAlign::Center)
@@ -994,9 +993,16 @@ impl RootView {
                         ),
                 )
                 .child(
-                    card().flex().flex_col().gap_2().child(note(
-                        "You can close this window — NotiFansly keeps working quietly from your system tray, and your server syncs itself.",
-                    )),
+                    card()
+                        .flex()
+                        .flex_col()
+                        .gap_2()
+                        .child(note(
+                            "You can close this window — NotiFansly keeps working quietly from your system tray, and your server syncs itself.",
+                        ))
+                        .child(note(
+                            "To set up your Discord server: open the NotiFansly web dashboard, go to Settings, and paste the sync key shown in this app.",
+                        )),
                 )
                 .child(
                     div()
@@ -1069,8 +1075,8 @@ impl RootView {
                                         .items_center()
                                         .justify_center()
                                         .flex_shrink()
-                                        .w(px(22.0))
-                                        .h(px(22.0))
+                                        .w(px(26.0))
+                                        .h(px(26.0))
                                         .rounded_full()
                                         .bg(t.accent_dim)
                                         .border_1()
@@ -1375,7 +1381,7 @@ impl RootView {
                 )
                 .child(
                     card().flex().flex_col().gap_2()
-                        .child(note("Sync key — keep it private. It restores your account on a new install together with a fresh management link."))
+                        .child(note("Sync key — keep it private. Paste it into the NotiFansly web dashboard (Settings) to link your Discord, and save a copy: it restores your account on a reinstall."))
                         .child(
                             div()
                                 .flex()
@@ -1450,6 +1456,21 @@ impl Render for RootView {
     fn render(&mut self, window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
         let t = self.palette();
 
+        // The wizard and success screens center vertically in the window;
+        // connect/dashboard stay top-aligned (they can exceed the height).
+        // GPUI's scroll container hands its child an unbounded height, so
+        // flex_1 alone cannot stretch - the mount gets an explicit minimum
+        // height derived from the viewport (minus header/padding slop).
+        let center = matches!(self.screen, Screen::Onboarding(_) | Screen::Success { .. });
+        let mount_min_h = (f32::from(window.viewport_size().height) - 120.0).max(400.0);
+
+        let screen: AnyElement = match self.screen {
+            Screen::Onboarding(step) => self.onboarding_view(step, window, cx).into_any_element(),
+            Screen::Connect => self.connect_view(window, cx).into_any_element(),
+            Screen::Success { recovered } => self.success_view(recovered, cx).into_any_element(),
+            Screen::Dashboard => self.dashboard_view(window, cx).into_any_element(),
+        };
+
         let content = div()
             .id(gpui::ElementId::Name(SharedString::from("dock-scroll")))
             .flex()
@@ -1464,20 +1485,25 @@ impl Render for RootView {
                     .flex()
                     .flex_col()
                     .w_full()
-                    .max_w(px(480.0))
+                    .h_full()
+                    .min_w(px(0.0))
+                    .max_w(px(520.0))
                     .mx_auto()
-                    .gap_3()
+                    .gap_4()
                     .child(self.header(cx))
-                    .child(match self.screen {
-                        Screen::Onboarding(step) => {
-                            self.onboarding_view(step, window, cx).into_any_element()
-                        }
-                        Screen::Connect => self.connect_view(window, cx).into_any_element(),
-                        Screen::Success { recovered } => {
-                            self.success_view(recovered, cx).into_any_element()
-                        }
-                        Screen::Dashboard => self.dashboard_view(window, cx).into_any_element(),
-                    }),
+                    .child(
+                        div()
+                            .id(gpui::ElementId::Name(SharedString::from("screen-mount")))
+                            .flex()
+                            .flex_col()
+                            .flex_1()
+                            .min_h(px(0.0))
+                            .gap_3()
+                            .when(center, move |mount| {
+                                mount.min_h(px(mount_min_h)).justify_center()
+                            })
+                            .child(screen),
+                    ),
             );
 
         content

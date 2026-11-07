@@ -78,17 +78,18 @@ pub struct Palette {
 }
 
 // Named font sizes (yap-a-thon): sizes used more than once get a name so a
-// change lands everywhere.
+// change lands everywhere. One step chunkier than the yap-a-thon dock —
+// this app is for livestream settings at arm's length, not a dense panel.
 pub mod text {
     use gpui::px;
     /// Card / section title.
-    pub const TITLE: gpui::Pixels = px(15.0);
+    pub const TITLE: gpui::Pixels = px(17.0);
     /// Normal reading text.
-    pub const BODY: gpui::Pixels = px(13.0);
+    pub const BODY: gpui::Pixels = px(14.0);
     /// Supporting text.
-    pub const LABEL: gpui::Pixels = px(12.0);
+    pub const LABEL: gpui::Pixels = px(13.0);
     /// A figure that needs reading, not scanning.
-    pub const VALUE: gpui::Pixels = px(17.0);
+    pub const VALUE: gpui::Pixels = px(20.0);
 }
 
 /// The accent pair (dark-panel value, light-panel value). Brand blue

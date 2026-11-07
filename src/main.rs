@@ -43,8 +43,8 @@ fn main() {
             let options = WindowOptions {
                 window_bounds: Some(gpui::WindowBounds::centered(
                     gpui::Size {
-                        width: gpui::px(480.0),
-                        height: gpui::px(640.0),
+                        width: gpui::px(520.0),
+                        height: gpui::px(700.0),
                     },
                     cx,
                 )),
