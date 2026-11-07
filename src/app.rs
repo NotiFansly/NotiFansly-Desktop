@@ -171,6 +171,37 @@ impl RootView {
         self.saved.is_connected()
     }
 
+    // -- demo mode ------------------------------------------------------------
+    // Canned data so the whole flow (connect -> success -> dashboard ->
+    // sync now) can be previewed and screenshotted without a server.
+    /// Plausible-looking fake status. `fresh_last_sync` bumps the timestamp
+    /// so the post-sync "finished" state differs from the initial one.
+    #[allow(dead_code)]
+    fn demo_status(fresh: bool) -> StatusResponse {
+        StatusResponse {
+            fansly_user_id: "4831920576392847361".to_string(),
+            username: "aureliaf".to_string(),
+            sync_method: "management_token".to_string(),
+            token_status: "active".to_string(),
+            last_sync_at: Some(if fresh {
+                "2026-11-06T22:58:47Z".to_string()
+            } else {
+                "2026-11-06T22:41:03Z".to_string()
+            }),
+            discord_linked: true,
+        }
+    }
+
+    #[allow(dead_code)]
+    fn demo_connect(created: bool) -> ConnectResponse {
+        ConnectResponse {
+            fansly_user_id: "4831920576392847361".to_string(),
+            username: "aureliaf".to_string(),
+            sync_key: "9f4ad2c1e07b5836ba41f09dc2e5a68ed7098f4a1c2b3d405e6f7a8b9c0d1e2f".to_string(),
+            created,
+        }
+    }
+
     // -- flow transitions -----------------------------------------------------
 
     /// Forward through the onboarding wizard.
@@ -240,6 +271,20 @@ impl RootView {
         self.notice = None;
         cx.notify();
 
+        if crate::demo() {
+            let first_time = !self.connected();
+            let task = cx.spawn(async move |view, cx: &mut AsyncApp| {
+                cx.background_executor()
+                    .timer(Duration::from_millis(900))
+                    .await;
+                let _ = view.update(cx, |this, cx| {
+                    this.busy = false;
+                    this.finish_connect(Ok(Self::demo_connect(first_time)), cx);
+                });
+            });
+            self._tasks.push(task);
+            return;
+        }
         let client = self.client.clone();
         let task = cx.spawn(async move |view, cx: &mut AsyncApp| {
             let result = cx
@@ -286,6 +331,20 @@ impl RootView {
         let Some(sync_key) = self.saved.sync_key.clone() else {
             return;
         };
+        if crate::demo() {
+            let task = cx.spawn(async move |view, cx: &mut AsyncApp| {
+                cx.background_executor()
+                    .timer(Duration::from_millis(400))
+                    .await;
+                let _ = view.update(cx, |this, cx| {
+                    this.status = Some(Self::demo_status(false));
+                    this.error = None;
+                    cx.notify();
+                });
+            });
+            self._tasks.push(task);
+            return;
+        }
         let client = self.client.clone();
         let task = cx.spawn(async move |view, cx: &mut AsyncApp| {
             let result = cx
@@ -317,6 +376,28 @@ impl RootView {
         self.error = None;
         self.set_notice("Server sync started…", cx);
 
+        if crate::demo() {
+            let task = cx.spawn(async move |view, cx: &mut AsyncApp| {
+                // Pretend the server chews on it for a few seconds.
+                for _ in 0..3 {
+                    cx.background_executor()
+                        .timer(Duration::from_secs(2))
+                        .await;
+                    let _ = view.update(cx, |this, cx| {
+                        if !this.syncing {
+                            cx.notify();
+                        }
+                    });
+                }
+                let _ = view.update(cx, |this, cx| {
+                    this.syncing = false;
+                    this.status = Some(Self::demo_status(true));
+                    this.set_notice("Server sync finished.", cx);
+                });
+            });
+            self._tasks.push(task);
+            return;
+        }
         let client = self.client.clone();
         let task = cx.spawn(async move |view, cx: &mut AsyncApp| {
             let started = cx
@@ -397,6 +478,10 @@ impl RootView {
 
     /// Periodic status refresh while the app runs (once a minute).
     pub fn schedule_periodic_refresh(&mut self, cx: &mut Context<Self>) {
+        if crate::demo() {
+            // Demo mode has nothing to poll; stale canned data is the point.
+            return;
+        }
         let client = self.client.clone();
         let task = cx.spawn(async move |view, cx: &mut AsyncApp| {
             loop {

@@ -69,3 +69,15 @@ Linux tray dependencies (Arch, adjust for your distro):
 - Old AccountManager (Tauri) app users: your Fansly auth-token flow still
   works against `/api/v1/sync`, but this app replaces it with management
   links + server-side sync.
+
+## Demo mode
+
+```sh
+cargo run -- --demo      # or: NOTIFANSLY_DEMO=1
+```
+
+Canned data (`@aureliaf`, active token, linked Discord) with no network:
+connect accepts any text, status/sync are simulated, and the whole flow
+(onboarding -> success -> dashboard) can be previewed and screenshotted
+without touching a server. Delete `~/.config/notifansly-desktop/state.json`
+to start over.

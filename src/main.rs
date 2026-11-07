@@ -13,12 +13,27 @@ mod tray;
 mod widgets;
 
 use std::sync::mpsc;
+use std::sync::OnceLock;
 use std::time::Duration;
 
 use gpui::{App, AsyncApp, WindowOptions};
 use tray::TrayCommand;
 
+/// Demo mode (`--demo` or `NOTIFANSLY_DEMO=1`): canned data instead of the
+/// real API - for previews and screenshots without touching a server.
+static DEMO: OnceLock<bool> = OnceLock::new();
+
+pub fn demo() -> bool {
+    DEMO.get().copied().unwrap_or(false)
+}
+
 fn main() {
+    let demo = std::env::args().any(|a| a == "--demo")
+        || std::env::var("NOTIFANSLY_DEMO").ok().as_deref() == Some("1");
+    let _ = DEMO.set(demo);
+    if demo {
+        eprintln!("[boot] DEMO MODE - canned data, no network");
+    }
     eprintln!("[boot] NotiFansly Desktop starting");
 
     // Tray commands flow from the tray threads to the GPUI thread.
