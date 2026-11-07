@@ -60,7 +60,12 @@ cargo build --release  # cargo-release profile is stripped + LTO
 ```
 
 Linux tray dependencies (Arch, adjust for your distro):
-`gtk3 libappindicator-gtk3` (or `libayatana-appindicator`).
+`gtk3 libayatana-appindicator` (or `libappindicator-gtk3`); on Debian/Ubuntu:
+`libayatana-appindicator3-dev libgtk-3-dev` to build.
+
+Cross-platform release builds (Linux, Windows, macOS) are produced by
+`.github/workflows/release.yml` - push a `vX.Y.Z` tag or trigger it in the
+Actions tab, and zips land on the GitHub release.
 
 ## Notes
 

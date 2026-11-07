@@ -1,0 +1,114 @@
+name: Build and release notifansly-desktop
+on:
+  workflow_dispatch:
+  push:
+    tags:
+      - 'v[0-9]+.[0-9]+.[0-9]+'
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: ubuntu-latest
+            artifact_name: notifansly-desktop-linux-x86_64
+            binary_name: notifansly-desktop
+          - os: windows-latest
+            artifact_name: notifansly-desktop-windows-x86_64
+            binary_name: notifansly-desktop.exe
+          # macos-latest is arm64; x86_64 Macs can run the arm64 build under
+          # Rosetta 2 for now. Add a macos-13 x86_64 row here if that ever
+          # stops being good enough.
+          - os: macos-latest
+            artifact_name: notifansly-desktop-macos-aarch64
+            binary_name: notifansly-desktop
+
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 90
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      # GPUI's Windows toolchain handles itself with MSVC; nothing to add.
+
+      - name: Install stable Rust toolchain
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Cache cargo registry/build
+        uses: Swatinem/rust-cache@v2
+
+      # Linux build deps, all system packages none of which are vendored:
+      #   libgtk-3-dev           - gtk 0.18 + glib crates (pkg-config build)
+      #   libayatana-appindicator3-dev - tray-icon's StatusNotifier backend
+      #   libxcb/libxkbcommon    - GPUI's X11 input stack
+      #   libwayland-dev         - GPUI's Wayland client feature set
+      #   libfreetype/libfontconfig - GPUI's font stack (font-kit/cosmic-text)
+      # libappindicator (old GtkAppIndicator) is dead on modern Ubuntu;
+      # libayatana is the maintained line, and the SNI plugin works with it.
+      # Runtime-only tray packages (libayatana-appindicator3-1 itself) are
+      # pulled in by the -dev package.
+      - name: Install Linux system dependencies
+        if: runner.os == 'Linux'
+        shell: bash
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y \
+            build-essential pkg-config \
+            libgtk-3-dev libayatana-appindicator3-dev \
+            libxcb1-dev libxkbcommon-dev libxkbcommon-x11-dev \
+            libwayland-dev \
+            libfreetype6-dev libfontconfig1-dev
+
+      # Release profile is stripped + LTO + codegen-units=1 (see Cargo.toml),
+      # so this is the slow, final-binary build.
+      - name: Build (release)
+        shell: bash
+        run: cargo build --release --locked
+
+      # Downloaded-from-a-browser binaries get Gatekeeper-quarantined on
+      # macOS. Ad-hoc signing is not notarization, but without it the binary
+      # will not run at all; with it, right-click → Open works first launch.
+      - name: Ad-hoc codesign (macOS)
+        if: runner.os == 'macOS'
+        shell: bash
+        run: codesign --force --sign - "target/release/${{ matrix.binary_name }}"
+
+      - name: Stage bundle
+        shell: bash
+        run: |
+          mkdir -p bundle
+          cp "target/release/${{ matrix.binary_name }}" bundle/
+          cp README.md bundle/
+
+      - name: Zip bundle (for release upload, Linux/macOS)
+        if: startsWith(github.ref, 'refs/tags/')
+        shell: bash
+        run: |
+          cd bundle
+          zip -r "../${{ matrix.artifact_name }}.zip" .
+
+      # Windows runners lack `zip`; PowerShell's tar (libarchive) can write
+      # zips, but Compress-Archive is the least-moving-parts builtin.
+      - name: Zip bundle (for release upload, Windows)
+        if: startsWith(github.ref, 'refs/tags/') && runner.os == 'Windows'
+        shell: pwsh
+        run: Compress-Archive -Path bundle/* -DestinationPath "${{ matrix.artifact_name }}.zip"
+
+      # Always attach the loose bundle as a CI artifact, even on
+      # non-tag dispatch runs, so manual runs are inspectable.
+      - name: Upload artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: ${{ matrix.artifact_name }}
+          path: bundle/
+
+      - name: Upload to release
+        if: startsWith(github.ref, 'refs/tags/')
+        uses: softprops/action-gh-release@v2
+        with:
+          files: ${{ matrix.artifact_name }}.zip
