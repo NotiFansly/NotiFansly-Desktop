@@ -1,0 +1,909 @@
+//! Root view: app model, async flows, and the Welcome / Dashboard screens.
+
+use std::sync::Arc;
+use std::time::Duration;
+
+use gpui::{
+    App, AppContext, AsyncApp, ClipboardItem, Context, Entity, InteractiveElement, IntoElement,
+    ParentElement, Render, StatefulInteractiveElement, Styled, Task, Window, div, px,
+};
+
+use crate::api::{ApiClient, ConnectResponse, StatusResponse};
+use crate::state::{self, PersistedState};
+use crate::widgets::{ButtonRole, InputKind, InputSubmitted, Theme, button, pill};
+
+const POLL_ROUNDS: u32 = 10;
+
+#[derive(Clone, Copy, PartialEq, Eq)]
+pub enum Screen {
+    Welcome,
+    Dashboard,
+}
+
+pub struct RootView {
+    client: Arc<ApiClient>,
+    pub saved: PersistedState,
+    screen: Screen,
+
+    // async-operation state
+    busy: bool,    // connect/connect-like op in flight
+    syncing: bool, // server sync in flight (post-trigger polling)
+    error: Option<String>,
+    notice: Option<String>,
+
+    status: Option<StatusResponse>,
+    reveal_key: bool,
+    editing_api_url: bool,
+
+    // inputs
+    claim_input: gpui::Entity<crate::widgets::TextInput>,
+    api_url_input: gpui::Entity<crate::widgets::TextInput>,
+
+    // keep async tasks alive
+    _tasks: Vec<Task<()>>,
+}
+
+impl RootView {
+    pub fn new(cx: &mut App) -> Entity<Self> {
+        let claim_input = crate::widgets::TextInput::new(
+            cx,
+            "claim-input",
+            "Paste your Fansly management session link…",
+            InputKind::Text,
+        );
+        let saved = state::load();
+        let api_url_input = crate::widgets::TextInput::new(
+            cx,
+            "api-url-input",
+            "API server URL",
+            InputKind::Text,
+        );
+        api_url_input.update(cx, |input, cx| {
+            input.set_value(saved.api_url().to_string(), cx);
+        });
+
+        let connected = saved.is_connected();
+        cx.new(|cx| {
+            // Enter in the claim input submits; Enter in the API-URL editor saves.
+            cx.subscribe(
+                &claim_input,
+                |this: &mut Self, _input: gpui::Entity<crate::widgets::TextInput>, event: &InputSubmitted, cx: &mut Context<Self>| {
+                    if !event.value.trim().is_empty() {
+                        this.connect(cx);
+                    }
+                },
+            )
+            .detach();
+            cx.subscribe(
+                &api_url_input,
+                |this: &mut Self, _input: gpui::Entity<crate::widgets::TextInput>, _event: &InputSubmitted, cx: &mut Context<Self>| {
+                    this.save_api_url(cx);
+                },
+            )
+            .detach();
+
+            Self {
+                client: Arc::new(ApiClient::new(saved.api_url())),
+                screen: if connected {
+                    Screen::Dashboard
+                } else {
+                    Screen::Welcome
+                },
+                saved,
+                busy: false,
+                syncing: false,
+                error: None,
+                notice: None,
+                status: None,
+                reveal_key: false,
+                editing_api_url: false,
+                claim_input,
+                api_url_input,
+                _tasks: Vec::new(),
+            }
+        })
+    }
+
+    fn persist(&mut self) {
+        state::save(&self.saved);
+    }
+
+    fn set_notice(&mut self, msg: impl Into<String>, cx: &mut Context<Self>) {
+        self.error = None;
+        self.notice = Some(msg.into());
+        cx.notify();
+    }
+
+    fn set_error(&mut self, msg: impl Into<String>, cx: &mut Context<Self>) {
+        self.notice = None;
+        self.error = Some(msg.into());
+        cx.notify();
+    }
+
+    fn connected(&self) -> bool {
+        self.saved.is_connected()
+    }
+
+    // -- async flows ---------------------------------------------------------
+
+    /// Claim a management session link. For an existing creator the server
+    /// returns their original sync key, so this doubles as recovery.
+    pub fn connect(&mut self, cx: &mut Context<Self>) {
+        let token = self.claim_input.read(cx).value().trim().to_string();
+        if token.is_empty() {
+            self.set_error("Paste your Fansly management session link first.", cx);
+            return;
+        }
+        self.busy = true;
+        self.error = None;
+        self.notice = None;
+        cx.notify();
+
+        let client = self.client.clone();
+        let task = cx.spawn(async move |view, cx: &mut AsyncApp| {
+            let result = cx
+                .background_executor()
+                .spawn(async move { client.connect(&token) })
+                .await;
+            let _ = view.update(cx, |this, cx| {
+                this.busy = false;
+                this.finish_connect(result, cx);
+            });
+        });
+        self._tasks.push(task);
+    }
+
+    fn finish_connect(&mut self, result: Result<ConnectResponse, String>, cx: &mut Context<Self>) {
+        match result {
+            Ok(resp) => {
+                self.saved.fansly_user_id = Some(resp.fansly_user_id.clone());
+                let username = if resp.username.is_empty() {
+                    self.saved.username.clone().unwrap_or_default()
+                } else {
+                    resp.username.clone()
+                };
+                self.saved.username = Some(username);
+                self.saved.sync_key = Some(resp.sync_key.clone());
+                self.persist();
+                self.claim_input.update(cx, |input, cx| input.clear(cx));
+                self.screen = Screen::Dashboard;
+                self.set_notice(
+                    if resp.created {
+                        "Account connected - server-side sync is live."
+                    } else {
+                        "Welcome back - your account was recovered and your sync key restored."
+                    },
+                    cx,
+                );
+                self.refresh_status(cx);
+            }
+            Err(e) => self.set_error(e, cx),
+        }
+    }
+
+    /// Fetch the server-side sync state for the saved sync key.
+    pub fn refresh_status(&mut self, cx: &mut Context<Self>) {
+        let Some(sync_key) = self.saved.sync_key.clone() else {
+            return;
+        };
+        let client = self.client.clone();
+        let task = cx.spawn(async move |view, cx: &mut AsyncApp| {
+            let result = cx
+                .background_executor()
+                .spawn(async move { client.status(&sync_key) })
+                .await;
+            let _ = view.update(cx, |this, cx| match result {
+                Ok(s) => {
+                    this.status = Some(s);
+                    this.error = None;
+                    cx.notify();
+                }
+                Err(e) => this.set_error(e, cx),
+            });
+        });
+        self._tasks.push(task);
+    }
+
+    /// Ask the server to run a sync now, then poll status briefly so the UI
+    /// can confirm it finished.
+    pub fn trigger_sync(&mut self, cx: &mut Context<Self>) {
+        let Some(sync_key) = self.saved.sync_key.clone() else {
+            return;
+        };
+        if self.syncing {
+            return;
+        }
+        self.syncing = true;
+        self.error = None;
+        self.set_notice("Server sync started…", cx);
+
+        let client = self.client.clone();
+        let task = cx.spawn(async move |view, cx: &mut AsyncApp| {
+            let started = cx
+                .background_executor()
+                .spawn(async move { client.trigger_sync(&sync_key) })
+                .await;
+            let _ = view.update(cx, |this, cx| match started {
+                Ok(()) => this.poll_sync_progress(cx),
+                Err(e) => {
+                    this.syncing = false;
+                    this.set_error(e, cx);
+                }
+            });
+        });
+        self._tasks.push(task);
+    }
+
+    /// After triggering, poll status a few times until `last_sync_at` moves.
+    fn poll_sync_progress(&mut self, cx: &mut Context<Self>) {
+        let sync_key = match self.saved.sync_key.clone() {
+            Some(k) => k,
+            None => {
+                self.syncing = false;
+                return;
+            }
+        };
+        let client = self.client.clone();
+        let before = self.status.as_ref().and_then(|s| s.last_sync_at.clone());
+        let task = cx.spawn(async move |view, cx: &mut AsyncApp| {
+            for round in 1..=POLL_ROUNDS {
+                cx.background_executor()
+                    .timer(Duration::from_secs(if round == 1 { 3 } else { 6 }))
+                    .await;
+                if !view.upgrade().is_some() {
+                    return;
+                }
+                let snapshot = sync_key.clone();
+                let client = client.clone();
+                let result = cx
+                    .background_executor()
+                    .spawn(async move { client.status(&snapshot) })
+                    .await;
+                let done = match &result {
+                    Ok(s) => s.last_sync_at.is_some() && s.last_sync_at != before,
+                    Err(_) => false,
+                };
+                let keep_going = view
+                    .update(cx, |this, cx| match result {
+                        Ok(s) => {
+                            this.status = Some(s);
+                            if done {
+                                this.syncing = false;
+                                this.set_notice("Server sync finished.", cx);
+                                false
+                            } else {
+                                cx.notify();
+                                true
+                            }
+                        }
+                        Err(e) => {
+                            this.syncing = false;
+                            this.set_error(e, cx);
+                            false
+                        }
+                    })
+                    .unwrap_or(false);
+                if !keep_going {
+                    return;
+                }
+            }
+            let _ = view.update(cx, |this, cx| {
+                this.syncing = false;
+                this.set_notice("Sync is still running on the server - check back shortly.", cx);
+            });
+        });
+        self._tasks.push(task);
+    }
+
+    /// Periodic status refresh while the app runs (once a minute).
+    pub fn schedule_periodic_refresh(&mut self, cx: &mut Context<Self>) {
+        let client = self.client.clone();
+        let task = cx.spawn(async move |view, cx: &mut AsyncApp| {
+            loop {
+                cx.background_executor()
+                    .timer(Duration::from_secs(60))
+                    .await;
+                let Some(this) = view.upgrade() else { return };
+                let sync_key = cx
+                    .update(|cx| {
+                        let root = this.read(cx);
+                        if root.connected() {
+                            root.saved.sync_key.clone()
+                        } else {
+                            None
+                        }
+                    })
+                    .ok()
+                    .flatten();
+                let Some(sync_key) = sync_key else { continue };
+                let client = client.clone();
+                let result = cx
+                    .background_executor()
+                    .spawn(async move { client.status(&sync_key) })
+                    .await;
+                let _ = view.update(cx, |this, cx| {
+                    if let Ok(s) = result {
+                        this.status = Some(s);
+                        cx.notify();
+                    }
+                });
+            }
+        });
+        self._tasks.push(task);
+    }
+
+    // -- local actions ------------------------------------------------------
+
+    pub fn copy_sync_key(&mut self, cx: &mut Context<Self>) {
+        if let Some(key) = self.saved.sync_key.clone() {
+            if !key.is_empty() {
+                cx.write_to_clipboard(ClipboardItem::new_string(key));
+                self.set_notice("Sync key copied to clipboard.", cx);
+            }
+        }
+    }
+
+    pub fn toggle_reveal_key(&mut self, cx: &mut Context<Self>) {
+        self.reveal_key = !self.reveal_key;
+        cx.notify();
+    }
+
+    pub fn open_dashboard(&mut self, cx: &mut Context<Self>) {
+        let url = self.saved.dashboard_url().to_string();
+        let _ = webbrowser::open(&url);
+        cx.notify();
+    }
+
+    pub fn toggle_api_url_editor(&mut self, cx: &mut Context<Self>) {
+        self.editing_api_url = !self.editing_api_url;
+        cx.notify();
+    }
+
+    pub fn save_api_url(&mut self, cx: &mut Context<Self>) {
+        let url = self.api_url_input.read(cx).value().trim().to_string();
+        if url.is_empty() {
+            self.set_error("API server URL cannot be empty.", cx);
+            return;
+        }
+        self.saved.api_url = Some(url);
+        self.persist();
+        self.client = Arc::new(ApiClient::new(self.saved.api_url()));
+        self.editing_api_url = false;
+        self.set_notice("API server updated.", cx);
+    }
+
+    /// Forgotten device / start over: wipe the local sync key. The server
+    /// keeps the creator record - a fresh management link recovers it.
+    pub fn disconnect(&mut self, cx: &mut Context<Self>) {
+        self.saved.fansly_user_id = None;
+        self.saved.username = None;
+        self.saved.sync_key = None;
+        self.persist();
+        self.status = None;
+        self.syncing = false;
+        self.reveal_key = false;
+        self.screen = Screen::Welcome;
+        self.set_notice("Disconnected on this device. The server keeps your account - paste a fresh management link to reconnect.", cx);
+    }
+
+    // -- rendering ------------------------------------------------------------
+
+    fn banner(&self) -> Option<gpui::AnyElement> {
+        let t = Theme::dark();
+        self.error
+            .clone()
+            .map(|msg| {
+                div()
+                    .px_3()
+                    .py_2()
+                    .rounded_md()
+                    .bg(t.surface)
+                    .border_1()
+                    .border_color(t.danger)
+                    .text_color(t.danger)
+                    .text_size(px(12.0))
+                    .child(msg)
+                    .into_any_element()
+            })
+            .or_else(|| {
+                self.notice.clone().map(|msg| {
+                    div()
+                        .px_3()
+                        .py_2()
+                        .rounded_md()
+                        .bg(t.surface)
+                        .border_1()
+                        .border_color(t.success)
+                        .text_color(t.success)
+                        .text_size(px(12.0))
+                        .child(msg)
+                        .into_any_element()
+                })
+            })
+    }
+
+    fn welcome_view(&mut self, _window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
+        let t = Theme::dark();
+
+        let steps = [
+            (
+                "1",
+                "In your Fansly creator dashboard, generate a management session link.",
+            ),
+            ("2", "Paste the whole link below and press Connect."),
+            (
+                "3",
+                "NotiFansly syncs your tiers, followers and subscribers - automatically, server-side.",
+            ),
+        ];
+
+        div()
+            .id(gpui::ElementId::Name("welcome".into()))
+            .flex()
+            .flex_col()
+            .gap_3()
+            .children(self.banner())
+            .child(
+                div()
+                    .flex()
+                    .flex_col()
+                    .gap_1()
+                    .child(
+                        div()
+                            .text_size(px(22.0))
+                            .font_weight(gpui::FontWeight::BOLD)
+                            .text_color(t.text)
+                            .child("Connect your Fansly account"),
+                    )
+                    .child(
+                        div()
+                            .text_size(px(13.0))
+                            .text_color(t.text_muted)
+                            .child("Management link tokens - no passwords, no API keys."),
+                    ),
+            )
+            .child(
+                div()
+                    .flex()
+                    .flex_col()
+                    .gap_2()
+                    .p_3()
+                    .rounded_md()
+                    .bg(t.surface)
+                    .border_1()
+                    .border_color(t.border)
+                    .children(steps.into_iter().map(|(n, text)| {
+                        div()
+                            .flex()
+                            .flex_row()
+                            .gap_2()
+                            .child(
+                                div()
+                                    .flex()
+                                    .items_center()
+                                    .justify_center()
+                                    .w(px(18.0))
+                                    .h(px(18.0))
+                                    .rounded_full()
+                                    .bg(t.accent_dim)
+                                    .border_1()
+                                    .border_color(t.accent)
+                                    .text_size(px(10.0))
+                                    .font_weight(gpui::FontWeight::SEMIBOLD)
+                                    .text_color(t.accent)
+                                    .child(n.to_string()),
+                            )
+                            .child(
+                                div()
+                                    .flex_1()
+                                    .text_size(px(12.0))
+                                    .text_color(t.text_muted)
+                                    .child(text.to_string()),
+                            )
+                    })),
+            )
+            .child(self.claim_input.clone())
+            .child(
+                div()
+                    .flex()
+                    .flex_row()
+                    .gap_2()
+                    .child(button(
+                        "connect-btn",
+                        if self.busy { "Connecting…" } else { "Connect" },
+                        ButtonRole::Primary,
+                        !self.busy,
+                        cx,
+                        |this: &mut Self, _e, _w, cx| this.connect(cx),
+                    ))
+                    .child(button(
+                        "recover-btn",
+                        "Recover existing account",
+                        ButtonRole::Secondary,
+                        !self.busy,
+                        cx,
+                        |this: &mut Self, _e, _w, cx| {
+                            this.set_notice(
+                                "Use the same flow: paste a fresh management session link - your existing account and sync key will be found and restored.",
+                                cx,
+                            );
+                        },
+                    )),
+            )
+            .child(self.api_url_row(cx))
+    }
+
+    fn api_url_row(&mut self, cx: &mut Context<Self>) -> impl IntoElement {
+        let t = Theme::dark();
+        if self.editing_api_url {
+            return div()
+                .id(gpui::ElementId::Name("api-url-edit".into()))
+                .flex()
+                .flex_col()
+                .gap_2()
+                .pt_2()
+                .border_t_1()
+                .border_color(t.border)
+                .child(
+                    div()
+                        .text_size(px(11.0))
+                        .text_color(t.text_muted)
+                        .child("Sync API server"),
+                )
+                .child(self.api_url_input.clone())
+                .child(
+                    div()
+                        .flex()
+                        .flex_row()
+                        .gap_2()
+                        .child(button(
+                            "api-url-save",
+                            "Save",
+                            ButtonRole::Primary,
+                            true,
+                            cx,
+                            |this: &mut Self, _e, _w, cx| this.save_api_url(cx),
+                        ))
+                        .child(button(
+                            "api-url-cancel",
+                            "Cancel",
+                            ButtonRole::Secondary,
+                            true,
+                            cx,
+                            |this: &mut Self, _e, _w, cx| this.toggle_api_url_editor(cx),
+                        )),
+                )
+                .into_any_element();
+        }
+        div()
+            .id(gpui::ElementId::Name("api-url-view".into()))
+            .flex()
+            .flex_row()
+            .items_center()
+            .justify_between()
+            .pt_2()
+            .border_t_1()
+            .border_color(t.border)
+            .child(
+                div()
+                    .text_size(px(11.0))
+                    .text_color(t.text_muted)
+                    .child(format!("Sync API: {}", self.client.api_url())),
+            )
+            .child(
+                div()
+                    .id(gpui::ElementId::Name("api-url-toggle".into()))
+                    .cursor_pointer()
+                    .text_size(px(11.0))
+                    .text_color(t.accent)
+                    .on_click(cx.listener(
+                        |this: &mut Self, _e, _w, cx| this.toggle_api_url_editor(cx),
+                    ))
+                    .child("edit"),
+            )
+            .into_any_element()
+    }
+
+    fn dashboard_view(&mut self, _window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
+        let t = Theme::dark();
+        let username = self
+            .status
+            .as_ref()
+            .map(|s| s.username.clone())
+            .filter(|u| !u.is_empty())
+            .or_else(|| self.saved.username.clone())
+            .unwrap_or_else(|| "creator".to_string());
+
+        let token_status = self
+            .status
+            .as_ref()
+            .map(|s| s.token_status.clone())
+            .unwrap_or_else(|| "unknown".to_string());
+        let (token_label, token_color) = match token_status.as_str() {
+            "active" => ("token active", t.success),
+            "invalid" => ("token invalid - reconnect with a fresh link", t.danger),
+            "expired" => ("token expired - reconnect with a fresh link", t.warning),
+            _ => ("token status unknown", t.text_muted),
+        };
+
+        let last_sync = self
+            .status
+            .as_ref()
+            .and_then(|s| s.last_sync_at.clone())
+            .map(|v| {
+                // Server sends RFC3339; show as-is minus fractional seconds.
+                v.split('.').next().map(|s| s.replace('T', " ")).unwrap_or(v)
+            })
+            .unwrap_or_else(|| "never".to_string());
+
+        let discord_linked = self
+            .status
+            .as_ref()
+            .map(|s| s.discord_linked)
+            .unwrap_or(false);
+
+        let sync_method = self
+            .status
+            .as_ref()
+            .map(|s| s.sync_method.clone())
+            .unwrap_or_else(|| "management_token".to_string());
+
+        let key = self.saved.sync_key.clone().unwrap_or_default();
+        let masked = if key.len() > 10 {
+            format!("{}••••{}", &key[..6], &key[key.len() - 4..])
+        } else {
+            "••••".to_string()
+        };
+        let key_shown: String = if self.reveal_key { key.clone() } else { masked };
+        let has_key = !key.is_empty();
+
+        let fansly_id = self
+            .status
+            .as_ref()
+            .map(|s| s.fansly_user_id.clone())
+            .filter(|v| !v.is_empty())
+            .or_else(|| self.saved.fansly_user_id.clone())
+            .unwrap_or_default();
+
+        // Info rows: (label, value)
+        let rows: Vec<(String, String)> = vec![
+            ("Fansly ID".into(), fansly_id),
+            ("Sync method".into(), sync_method),
+            ("Last server sync".into(), last_sync),
+            ("Discord".into(), if discord_linked { "linked".into() } else { "not linked".into() }),
+        ];
+
+        div()
+            .id(gpui::ElementId::Name("dashboard".into()))
+            .flex()
+            .flex_col()
+            .gap_3()
+            .children(self.banner())
+            .child(
+                div()
+                    .flex()
+                    .flex_row()
+                    .items_center()
+                    .justify_between()
+                    .child(
+                        div()
+                            .flex()
+                            .flex_col()
+                            .gap_1()
+                            .child(
+                                div()
+                                    .text_size(px(20.0))
+                                    .font_weight(gpui::FontWeight::BOLD)
+                                    .text_color(t.text)
+                                    .child(format!("@{username}")),
+                            )
+                            .child(pill("token-status-pill", token_label, token_color)),
+                    )
+                    .child(
+                        div()
+                            .flex()
+                            .flex_row()
+                            .gap_2()
+                            .child(
+                                div()
+                                    .id(gpui::ElementId::Name("open-dashboard".into()))
+                                    .cursor_pointer()
+                                    .text_size(px(12.0))
+                                    .text_color(t.accent)
+                                    .on_click(cx.listener(
+                                        |this: &mut Self, _e, _w, cx| this.open_dashboard(cx),
+                                    ))
+                                    .child("Open web dashboard ↗"),
+                            ),
+                    ),
+            )
+            .child(
+                div()
+                    .flex()
+                    .flex_col()
+                    .gap_2()
+                    .p_3()
+                    .rounded_md()
+                    .bg(t.surface)
+                    .border_1()
+                    .border_color(t.border)
+                    .children(rows.into_iter().map(|(label, value)| {
+                        div()
+                            .flex()
+                            .flex_row()
+                            .items_center()
+                            .justify_between()
+                            .child(
+                                div()
+                                    .text_size(px(12.0))
+                                    .text_color(t.text_muted)
+                                    .child(label.clone()),
+                            )
+                            .child(
+                                div()
+                                    .text_size(px(12.0))
+                                    .text_color(if label == "Discord" && value == "not linked" {
+                                        t.text_muted
+                                    } else {
+                                        t.text
+                                    })
+                                    .child(value),
+                            )
+                    })),
+            )
+            .child(
+                div()
+                    .flex()
+                    .flex_row()
+                    .gap_2()
+                    .child(button(
+                        "sync-now-btn",
+                        if self.syncing { "Syncing…" } else { "Sync now" },
+                        ButtonRole::Primary,
+                        !self.syncing,
+                        cx,
+                        |this: &mut Self, _e, _w, cx| this.trigger_sync(cx),
+                    ))
+                    .child(button(
+                        "refresh-btn",
+                        "Refresh",
+                        ButtonRole::Secondary,
+                        !self.busy,
+                        cx,
+                        |this: &mut Self, _e, _w, cx| this.refresh_status(cx),
+                    )),
+            )
+            .child(
+                div()
+                    .flex()
+                    .flex_col()
+                    .gap_2()
+                    .p_3()
+                    .rounded_md()
+                    .bg(t.surface)
+                    .border_1()
+                    .border_color(t.border)
+                    .child(
+                        div()
+                            .text_size(px(12.0))
+                            .text_color(t.text_muted)
+                            .child("Sync key - keep it private. It restores your account on a new install together with a fresh management link."),
+                    )
+                    .child(
+                        div()
+                            .flex()
+                            .flex_row()
+                            .items_center()
+                            .gap_2()
+                            .child(
+                                div()
+                                    .flex_1()
+                                    .text_size(px(12.0))
+                                    .font_weight(gpui::FontWeight::SEMIBOLD)
+                                    .text_color(t.text)
+                                    .child(key_shown),
+                            )
+                            .child(button(
+                                "reveal-key-btn",
+                                if self.reveal_key { "Hide" } else { "Reveal" },
+                                ButtonRole::Secondary,
+                                has_key,
+                                cx,
+                                |this: &mut Self, _e, _w, cx| this.toggle_reveal_key(cx),
+                            ))
+                            .child(button(
+                                "copy-key-btn",
+                                "Copy",
+                                ButtonRole::Secondary,
+                                has_key,
+                                cx,
+                                |this: &mut Self, _e, _w, cx| this.copy_sync_key(cx),
+                            )),
+                    ),
+            )
+            .child(
+                div()
+                    .flex()
+                    .flex_row()
+                    .justify_between()
+                    .pt_2()
+                    .border_t_1()
+                    .border_color(t.border)
+                    .child(button(
+                        "disconnect-btn",
+                        "Disconnect",
+                        ButtonRole::Danger,
+                        true,
+                        cx,
+                        |this: &mut Self, _e, _w, cx| this.disconnect(cx),
+                    )),
+            )
+    }
+}
+
+impl Render for RootView {
+    fn render(&mut self, window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
+        let t = Theme::dark();
+
+        let content: gpui::Stateful<gpui::Div> = div()
+            .id(gpui::ElementId::Name("root".into()))
+            .flex()
+            .flex_col()
+            .bg(t.bg)
+            .text_color(t.text)
+            .size_full()
+            .p_4()
+            .child(
+                div()
+                    .flex()
+                    .flex_col()
+                    .w_full()
+                    .max_w(px(460.0))
+                    .mx_auto()
+                    .h_full()
+                    .gap_3()
+                    .child(
+                        div()
+                            .flex()
+                            .flex_row()
+                            .items_center()
+                            .gap_2()
+                            .child(
+                                div()
+                                    .flex()
+                                    .items_center()
+                                    .justify_center()
+                                    .w(px(28.0))
+                                    .h(px(28.0))
+                                    .rounded_md()
+                                    .bg(t.accent_dim)
+                                    .border_1()
+                                    .border_color(t.accent)
+                                    .text_size(px(13.0))
+                                    .font_weight(gpui::FontWeight::BOLD)
+                                    .text_color(t.accent)
+                                    .child("N"),
+                            )
+                            .child(
+                                div()
+                                    .text_size(px(15.0))
+                                    .font_weight(gpui::FontWeight::BOLD)
+                                    .text_color(t.text)
+                                    .child("NotiFansly"),
+                            )
+                            .child(
+                                div()
+                                    .text_size(px(11.0))
+                                    .text_color(t.text_muted)
+                                    .child("Desktop"),
+                            ),
+                    )
+                    .child(match self.screen {
+                        Screen::Welcome => self.welcome_view(window, cx).into_any_element(),
+                        Screen::Dashboard => self.dashboard_view(window, cx).into_any_element(),
+                    }),
+            );
+
+        content
+    }
+}

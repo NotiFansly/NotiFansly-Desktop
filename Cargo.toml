@@ -1,0 +1,33 @@
+[package]
+name = "notifansly-desktop"
+version = "0.1.0"
+edition = "2024"
+description = "NotiFansly Desktop — creator sync manager (GPUI)"
+license = "MIT"
+
+[dependencies]
+gpui = "0.2.2"
+serde = { version = "1.0", features = ["derive"] }
+serde_json = "1.0"
+# rustls keeps the build free of system OpenSSL requirements on all platforms.
+reqwest = { version = "0.11", default-features = false, features = ["json", "rustls-tls"] }
+tokio = { version = "1", features = ["rt-multi-thread"] }
+dirs = "6.0"
+webbrowser = "1.1"
+tray-icon = "0.21.3"
+image = { version = "0.25", default-features = false, features = ["png"] }
+
+[target.'cfg(target_os = "linux")'.dependencies]
+gtk = "0.18.2"
+glib = "0.21.5"
+
+[target.'cfg(target_os = "windows")'.dependencies]
+windows-sys = { version = "0.52", features = [
+    "Win32_Foundation",
+    "Win32_UI_WindowsAndMessaging",
+] }
+
+[profile.release]
+strip = true
+lto = true
+codegen-units = 1
