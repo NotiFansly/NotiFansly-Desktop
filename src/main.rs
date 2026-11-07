@@ -6,6 +6,7 @@
 
 mod api;
 mod app;
+mod autostart;
 mod state;
 mod tray;
 mod widgets;

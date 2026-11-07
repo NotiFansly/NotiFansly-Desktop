@@ -34,6 +34,7 @@ pub struct RootView {
     status: Option<StatusResponse>,
     reveal_key: bool,
     editing_api_url: bool,
+    launch_at_login: bool,
 
     // inputs
     claim_input: gpui::Entity<crate::widgets::TextInput>,
@@ -97,6 +98,7 @@ impl RootView {
                 status: None,
                 reveal_key: false,
                 editing_api_url: false,
+                launch_at_login: crate::autostart::is_enabled(),
                 claim_input,
                 api_url_input,
                 _tasks: Vec::new(),
@@ -370,6 +372,25 @@ impl RootView {
         self.client = Arc::new(ApiClient::new(self.saved.api_url()));
         self.editing_api_url = false;
         self.set_notice("API server updated.", cx);
+    }
+
+    /// Toggle launch-at-login (XDG autostart / LaunchAgent / Run key).
+    pub fn toggle_launch_at_login(&mut self, cx: &mut Context<Self>) {
+        let want = !self.launch_at_login;
+        match crate::autostart::set_enabled(want) {
+            Ok(()) => {
+                self.launch_at_login = want;
+                self.set_notice(
+                    if want {
+                        "NotiFansly Desktop will launch at login."
+                    } else {
+                        "Launch at login disabled."
+                    },
+                    cx,
+                );
+            }
+            Err(e) => self.set_error(e, cx),
+        }
     }
 
     /// Forgotten device / start over: wipe the local sync key. The server
@@ -823,12 +844,25 @@ impl RootView {
             )
             .child(
                 div()
+                    .id(gpui::ElementId::Name("dashboard-footer".into()))
                     .flex()
                     .flex_row()
+                    .items_center()
                     .justify_between()
-                    .pt_2()
-                    .border_t_1()
-                    .border_color(t.border)
+                    .gap_2()
+                    .pt_3()
+                    .child(button(
+                        "autostart-btn",
+                        if self.launch_at_login {
+                            "Launch at login: ON"
+                        } else {
+                            "Launch at login: OFF"
+                        },
+                        ButtonRole::Secondary,
+                        true,
+                        cx,
+                        |this: &mut Self, _e, _w, cx| this.toggle_launch_at_login(cx),
+                    ))
                     .child(button(
                         "disconnect-btn",
                         "Disconnect",

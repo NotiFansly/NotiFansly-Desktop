@@ -17,6 +17,9 @@ status client that lives in your system tray.
   management link: your existing account and sync key are found and restored.
 - **System tray** — close the window and the app keeps running in the tray
   (Show / Sync now / Quit). Sync is server-side, so a parked window is fine.
+- **Optional launch at login** — one click in the dashboard footer (XDG
+  autostart on Linux, LaunchAgent on macOS, Run registry key on Windows),
+  pointing at wherever the binary currently lives.
 - **Status at a glance** — management-token health, last server sync time,
   Discord linking, and a masked sync key with copy/reveal.
 - **No secrets in the binary** — the app talks to the public desktop

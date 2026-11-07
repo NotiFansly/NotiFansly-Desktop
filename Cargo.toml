@@ -15,6 +15,7 @@ tokio = { version = "1", features = ["rt-multi-thread"] }
 dirs = "6.0"
 webbrowser = "1.1"
 tray-icon = "0.21.3"
+auto-launch = "0.6.0"
 image = { version = "0.25", default-features = false, features = ["png"] }
 
 [target.'cfg(target_os = "linux")'.dependencies]
