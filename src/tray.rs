@@ -132,12 +132,16 @@ fn linux_tray_main() {
 fn windows_tray_main() {
     let _tray = build_tray();
     eprintln!("[tray] tray icon created, pumping win32 messages");
+    // windows-sys MSG derives nothing; HWND is an isize handle. A zeroed
+    // MSG is the canonical "no message yet" state, and handing 0 as the
+    // HWND filter means "all windows of this thread".
     unsafe {
-        let mut msg = windows_sys::Win32::UI::WindowsAndMessaging::MSG::default();
         use windows_sys::Win32::UI::WindowsAndMessaging::{
-            DispatchMessageW, GetMessageW, TranslateMessage,
+            DispatchMessageW, GetMessageW, MSG, TranslateMessage,
         };
-        while GetMessageW(&mut msg, std::ptr::null_mut(), 0, 0) != 0 {
+        let mut msg: MSG = std::mem::zeroed();
+        // GetMessageW returns -1 on error, 0 on WM_QUT, nonzero otherwise.
+        while GetMessageW(&mut msg, 0, 0, 0) > 0 {
             let _ = TranslateMessage(&msg);
             DispatchMessageW(&msg);
         }

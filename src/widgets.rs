@@ -79,7 +79,17 @@ impl TextInput {
         let text = cx
             .read_from_clipboard()
             .and_then(|item| item.text())
-            .or_else(|| cx.read_from_primary().and_then(|item| item.text()));
+            // X11/Wayland middle-click primary selection only exists on Linux.
+            .or_else(|| {
+                #[cfg(target_os = "linux")]
+                {
+                    cx.read_from_primary().and_then(|item| item.text())
+                }
+                #[cfg(not(target_os = "linux"))]
+                {
+                    None
+                }
+            });
         let Some(text) = text else { return };
         self.insert(&text, cx);
     }
