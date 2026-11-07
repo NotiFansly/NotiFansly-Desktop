@@ -26,6 +26,10 @@ pub struct PersistedState {
     pub sync_key: Option<String>,
     #[serde(default)]
     pub appearance: Option<String>,
+    /// Whether the first-launch onboarding wizard has been completed (so it
+    /// never repeats; false for fresh installs).
+    #[serde(default)]
+    pub onboarded: Option<bool>,
 }
 
 impl Default for PersistedState {
@@ -37,6 +41,7 @@ impl Default for PersistedState {
             username: None,
             sync_key: None,
             appearance: None,
+            onboarded: None,
         }
     }
 }

@@ -10,9 +10,16 @@ status client that lives in your system tray.
 
 ## Features
 
+- **First-launch onboarding** — a 3-step wizard for non-technical users:
+  welcome → how to create a Fansly management link (with an "Open Fansly"
+  shortcut) → paste it. Each step fades in; progress dots show where you
+  are; it never repeats after completion.
 - **Connect via Fansly management link** — paste the management session link
   from your Fansly creator dashboard, press Connect. The (single-use) link is
   claimed by the API and the session is stored server-side, encrypted at rest.
+- **Connected success state** — after connecting (or recovering), a
+  full-screen "You're connected!" step tells users they can simply close the
+  window; sync continues from the system tray on its own.
 - **Account recovery** — reinstalling or moving devices? Paste a fresh
   management link: your existing account and sync key are found and restored.
 - **System tray** — close the window and the app keeps running in the tray
