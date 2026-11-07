@@ -92,11 +92,9 @@ fn main() {
                 window.set_app_id("notifansly-desktop");
 
                 // Closing the window parks the app in the tray instead of
-                // exiting - the server keeps syncing either way. Where the
-                // platform's minimize is wrong (Hyprland ignores it; on
-                // Windows it lands in the taskbar, not the tray) the wm
-                // module does the real hide; minimize remains the fallback
-                // elsewhere.
+                // exiting - the server keeps syncing either way. Windows
+                // hides the window properly (minimize would park it in the
+                // taskbar); everywhere else minimize is the fallback.
                 window.on_window_should_close(cx, |w, _| {
                     eprintln!("[window] close requested -> hiding to tray");
                     crate::wm::hide_to_tray();

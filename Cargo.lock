@@ -3948,7 +3948,6 @@ dependencies = [
  "gpui",
  "gtk",
  "image",
- "libc",
  "reqwest",
  "serde",
  "serde_json",
