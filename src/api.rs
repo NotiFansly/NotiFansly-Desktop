@@ -52,6 +52,38 @@ struct ApiError {
     error: String,
 }
 
+/// The latest GitHub release of the desktop app itself.
+#[derive(Debug, Clone, Deserialize, Default)]
+pub struct LatestRelease {
+    #[serde(default, rename = "tag_name")]
+    pub tag_name: String,
+    #[serde(default, rename = "html_url")]
+    pub html_url: String,
+}
+
+pub const RELEASES_URL: &str = "https://github.com/NotiFansly/NotiFansly-Desktop/releases/latest";
+
+/// Compare two dotted versions ("v0.2.0" vs "0.1.0"); true when `remote`
+/// is newer than `local`. Unparseable segments count as 0.
+pub fn is_newer(remote: &str, local: &str) -> bool {
+    let parse = |s: &str| -> Vec<u64> {
+        s.trim_start_matches('v')
+            .split('.')
+            .map(|p| p.parse::<u64>().unwrap_or(0))
+            .collect()
+    };
+    let r = parse(remote);
+    let l = parse(local);
+    for i in 0..r.len().max(l.len()) {
+        let rv = r.get(i).copied().unwrap_or(0);
+        let lv = l.get(i).copied().unwrap_or(0);
+        if rv != lv {
+            return rv > lv;
+        }
+    }
+    false
+}
+
 /// Accept the full management link or the bare claim token (server-side also
 /// tolerates both, but stripping here keeps the payload small and the error
 /// messages local).
@@ -162,6 +194,21 @@ impl ApiClient {
             resp.json::<StatusResponse>()
                 .await
                 .map_err(|e| format!("Unexpected server response: {e}"))
+        })
+    }
+
+    /// The latest published release of this app on GitHub.
+    pub fn latest_release(&self) -> Result<LatestRelease, String> {
+        self.block_on(async move {
+            self.inner
+                .get("https://api.github.com/repos/NotiFansly/NotiFansly-Desktop/releases/latest")
+                .header("Accept", "application/vnd.github+json")
+                .send()
+                .await
+                .map_err(|e| format!("release check failed: {e}"))?
+                .json::<LatestRelease>()
+                .await
+                .map_err(|e| format!("unexpected release response: {e}"))
         })
     }
 

@@ -55,6 +55,10 @@ pub struct RootView {
     reveal_key: bool,
     editing_api_url: bool,
     launch_at_login: bool,
+    /// A newer release on GitHub: (version tag, release page URL).
+    update_available: Option<(String, String)>,
+    /// Session-only: user hid the update banner.
+    update_dismissed: bool,
 
     // inputs
     claim_input: gpui::Entity<crate::widgets::TextInput>,
@@ -145,6 +149,8 @@ impl RootView {
                 status: None,
                 reveal_key: false,
                 editing_api_url: false,
+                update_available: None,
+                update_dismissed: false,
                 launch_at_login: crate::autostart::is_enabled(),
                 claim_input,
                 api_url_input,
@@ -389,6 +395,58 @@ impl RootView {
         self._tasks.push(task);
     }
 
+    /// Check GitHub for a newer release of the app and surface it as a
+    /// dismissible banner. Silent on failure - a user with no internet or
+    /// an unreleased repo should never see an error about it.
+    pub fn check_for_update(&mut self, cx: &mut Context<Self>) {
+        if crate::demo() {
+            return; // demo mode is hermetic: no network, deterministic.
+        }
+        let client = self.client.clone();
+        let current = env!("CARGO_PKG_VERSION").to_string();
+        let task = cx.spawn(async move |view, cx: &mut AsyncApp| {
+            let result = cx
+                .background_executor()
+                .spawn(async move { client.latest_release() })
+                .await;
+            let _ = view.update(cx, |this, cx| {
+                if this.update_dismissed {
+                    return;
+                }
+                match result {
+                    Ok(release) => {
+                        if crate::api::is_newer(&release.tag_name, &current) {
+                            this.update_available = Some((
+                                release.tag_name,
+                                if release.html_url.is_empty() {
+                                    crate::api::RELEASES_URL.to_string()
+                                } else {
+                                    release.html_url
+                                },
+                            ));
+                            cx.notify();
+                        }
+                    }
+                    Err(_) => {} // offline / rate-limited: never nag
+                }
+            });
+        });
+        self._tasks.push(task);
+    }
+
+    pub fn dismiss_update(&mut self, cx: &mut Context<Self>) {
+        self.update_dismissed = true;
+        self.update_available = None;
+        cx.notify();
+    }
+
+    pub fn open_update(&mut self, cx: &mut Context<Self>) {
+        if let Some((_, url)) = self.update_available.clone() {
+            let _ = webbrowser::open(&url);
+        }
+        cx.notify();
+    }
+
     /// Ask the server to run a sync now, then poll status briefly so the UI
     /// can confirm it finished.
     pub fn trigger_sync(&mut self, cx: &mut Context<Self>) {
@@ -512,11 +570,18 @@ impl RootView {
         }
         let client = self.client.clone();
         let task = cx.spawn(async move |view, cx: &mut AsyncApp| {
+            let mut minutes: u32 = 0;
             loop {
                 cx.background_executor()
                     .timer(Duration::from_secs(60))
                     .await;
                 let Some(this) = view.upgrade() else { return };
+                // Re-check for app updates hourly (per-IP GitHub API limits;
+                // hourly is plenty for a desktop app).
+                minutes = minutes.wrapping_add(1);
+                if minutes % 60 == 0 {
+                    let _ = view.update(cx, |this, cx| this.check_for_update(cx));
+                }
                 let sync_key = cx
                     .update(|cx| {
                         let root = this.read(cx);
@@ -702,6 +767,56 @@ impl RootView {
                 .child(msg)
                 .into_any_element()
         })
+    }
+
+    /// The dismissible "a newer release exists" card.
+    fn update_banner(&mut self, cx: &mut Context<Self>) -> Option<AnyElement> {
+        let t = self.palette();
+        let (version, _) = self.update_available.clone()?;
+        let current = env!("CARGO_PKG_VERSION").to_string();
+        Some(
+            card()
+                .id(gpui::ElementId::Name(SharedString::from("update-banner")))
+                .flex()
+                .flex_row()
+                .items_center()
+                .gap_3()
+                .border_color(t.accent)
+                .child(
+                    div()
+                        .flex()
+                        .flex_col()
+                        .flex_1()
+                        .min_w(px(0.0))
+                        .child(
+                            div()
+                                .text_size(text::BODY)
+                                .font_weight(FontWeight::SEMIBOLD)
+                                .text_color(t.text)
+                                .child(format!("Update available — {version}")),
+                        )
+                        .child(note(format!(
+                            "You're on v{current}. Download the new version from GitHub to update."
+                        ))),
+                )
+                .child(button(
+                    "update-download-btn",
+                    "Download ↗",
+                    ButtonRole::Primary,
+                    true,
+                    cx,
+                    |this: &mut Self, _e, _w, cx| this.open_update(cx),
+                ))
+                .child(button(
+                    "update-dismiss-btn",
+                    "Hide",
+                    ButtonRole::Secondary,
+                    true,
+                    cx,
+                    |this: &mut Self, _e, _w, cx| this.dismiss_update(cx),
+                ))
+                .into_any_element(),
+        )
     }
 
     /// The wizard's step indicator: three dots, the current one lit.
@@ -1165,6 +1280,7 @@ impl RootView {
                 .gap_3()
                 .pt_4()
                 .children(self.banner())
+                .children(self.update_banner(cx))
                 .child(
                     div()
                         .flex()
@@ -1407,6 +1523,7 @@ impl RootView {
                 .flex_col()
                 .gap_3()
                 .children(self.banner())
+                .children(self.update_banner(cx))
                 .child(
                     card()
                         .flex()

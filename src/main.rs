@@ -75,6 +75,7 @@ fn main() {
                 // (connected startups flip it to normal on the first refresh).
                 root.apply_tray_tone();
                 root.refresh_status(cx);
+                root.check_for_update(cx);
                 root.schedule_periodic_refresh(cx);
             });
 
