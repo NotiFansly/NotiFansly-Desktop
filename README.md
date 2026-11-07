@@ -24,7 +24,7 @@ status client that lives in your system tray.
   Discord linking, and a masked sync key with copy/reveal.
 - **Light / dark mode** — toggle in the header, persisted per device. The
   palette follows the yap-a-thon dock theme (surface cards, status pills,
-  named text sizes, NotiFansly pink accent).
+  named text sizes, brand-blue #2699f6 accent).
 - **No secrets in the binary** — the app talks to the public desktop
   endpoints of the sync API (/api/v1/desktop/*); no shared server secrets.
 

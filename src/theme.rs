@@ -91,12 +91,14 @@ pub mod text {
     pub const VALUE: gpui::Pixels = px(17.0);
 }
 
-/// The accent pair (dark-panel value, light-panel value). NotiFansly pink,
-/// checked against both backgrounds the same way yap-a-thon's presets are:
-/// the accent is one colour used at a dozen sizes, so it has to clear the
-/// body-text bar everywhere.
-const ACCENT_ON_DARK: Hsla = Hsla { h: 0.930, s: 0.75, l: 0.72, a: 1.0 };
-const ACCENT_ON_LIGHT: Hsla = Hsla { h: 0.930, s: 0.70, l: 0.34, a: 1.0 };
+/// The accent pair (dark-panel value, light-panel value). Brand blue
+/// #2699f6, checked against both backgrounds the same way yap-a-thon's
+/// presets are: the accent is one colour used at a dozen sizes, so it has
+/// to clear the body-text bar everywhere. The light-panel value is the
+/// same hue deepened (l 0.42 instead of 0.557) so it stays readable on the
+/// near-white surfaces.
+const ACCENT_ON_DARK: Hsla = Hsla { h: 0.5745, s: 0.92, l: 0.557, a: 1.0 };
+const ACCENT_ON_LIGHT: Hsla = Hsla { h: 0.5745, s: 0.90, l: 0.42, a: 1.0 };
 
 pub fn theme_for(appearance: Appearance) -> Palette {
     let dark = appearance == Appearance::Dark;
@@ -135,9 +137,9 @@ pub fn theme_for(appearance: Appearance) -> Palette {
         },
         accent: if dark { ACCENT_ON_DARK } else { ACCENT_ON_LIGHT },
         accent_dim: if dark {
-            hsla(0.930, 0.60, 0.60, 0.14)
+            Hsla { h: 0.5745, s: 0.80, l: 0.50, a: 0.14 }
         } else {
-            hsla(0.930, 0.60, 0.55, 0.12)
+            Hsla { h: 0.5745, s: 0.80, l: 0.45, a: 0.12 }
         },
         on_accent: if dark {
             hsla(0.625, 0.20, 0.08, 1.0)
