@@ -1,6 +1,6 @@
 //! Small GPUI 0.2.2 widget set (gpui ships no input element in this
-//! release; the TextInput below mirrors the an earlier internal GPUI codebase GPUI one). Colours come
-//! from the shared theme module so light/dark switch everywhere at once.
+//! release, so the TextInput below is hand-rolled). Colours come from the
+//! shared theme module so light/dark switch everywhere at once.
 
 use gpui::{
     App, AppContext, Context, ElementId, EventEmitter, FocusHandle, InteractiveElement,

@@ -1,8 +1,7 @@
 //! HTTP client for the NotiFansly Go API.
 //!
 //! `ApiClient` owns a small dedicated tokio runtime so blocking calls can be
-//! made safely from GPUI background-executor threads (same pattern as the
-//! an earlier internal GPUI codebase GPUI client).
+//! made safely from GPUI background-executor threads.
 
 use serde::{Deserialize, Serialize};
 use std::sync::Arc;

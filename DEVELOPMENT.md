@@ -5,7 +5,7 @@ user-facing page is the [README](README.md).
 
 ## Stack
 
-GPUI 0.2.2 (crates.io) + tray-icon 0.21, same stack as an earlier internal GPUI codebase.
+GPUI 0.2.2 (crates.io) + tray-icon 0.21.
 The Go sync API it talks to lives in `../notifansly-api`
 (`/api/v1/desktop/*` endpoints, added for this app).
 
