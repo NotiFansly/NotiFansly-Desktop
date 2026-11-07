@@ -28,6 +28,9 @@ windows-sys = { version = "0.52", features = [
     "Win32_UI_WindowsAndMessaging",
 ] }
 
+[build-dependencies]
+embed-resource = "2.4"
+
 [profile.release]
 strip = true
 lto = true

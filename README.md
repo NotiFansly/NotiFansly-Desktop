@@ -15,8 +15,10 @@ Grab the one for your computer from the
 | macOS (Apple Silicon) | `notifansly-desktop-macos-aarch64.zip` |
 | Linux | `notifansly-desktop-linux-x86_64.zip` |
 
-Unzip it and run the app inside. On macOS, the first time you open it,
-right-click it and choose **Open** (once), then it opens normally after that.
+Unzip it. On Windows and Linux, run the app inside. On macOS, drag
+**NotiFansly Desktop.app** into your Applications folder - the first time
+you open it, right-click it and choose **Open** (once), and it opens
+normally after that.
 
 ## First launch
 

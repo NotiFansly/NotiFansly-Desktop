@@ -1,5 +1,12 @@
 //! NotiFansly Desktop - GPUI entry point.
 //!
+//! Release builds on Windows set the GUI subsystem so no console window
+//! spawns alongside the app (debug keeps it for the eprintln logging).
+
+// Hides the console window on Windows release builds. Debug keeps it so
+// dev builds still stream logs to a terminal.
+#![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
+
 //! Boots the GPUI window, starts the system tray, and polls tray commands
 //! (Show / Sync now / Quit). Closing the window hides it to tray; quit via
 //! the tray menu - sync runs server-side, so a parked window changes nothing.

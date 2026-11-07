@@ -1575,6 +1575,20 @@ checksum = "0e9c71c2167ca323c882b99918929403426e2373ea17242ff5653e0d5e1058be"
 
 [[package]]
 name = "embed-resource"
+version = "2.5.2"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "d506610004cfc74a6f5ee7e8c632b355de5eca1f03ee5e5e0ec11b77d4eb3d61"
+dependencies = [
+ "cc",
+ "memchr",
+ "rustc_version",
+ "toml 0.8.23",
+ "vswhom",
+ "winreg 0.52.0",
+]
+
+[[package]]
+name = "embed-resource"
 version = "3.0.12"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "6168487b5e7eb2673e6efe1200b1848016e436a6ca0b8031bf04bd9d493a249f"
@@ -2469,7 +2483,7 @@ dependencies = [
  "cosmic-text",
  "ctor",
  "derive_more",
- "embed-resource",
+ "embed-resource 3.0.12",
  "etagere",
  "filedescriptor",
  "flume",
@@ -3929,6 +3943,7 @@ version = "0.1.0"
 dependencies = [
  "auto-launch",
  "dirs 6.0.0",
+ "embed-resource 2.5.2",
  "glib 0.21.5",
  "gpui",
  "gtk",
@@ -7822,6 +7837,16 @@ name = "winreg"
 version = "0.50.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "524e57b2c537c0f9b1e69f1965311ec12182b4122e45035b1508cd24d2adadb1"
+dependencies = [
+ "cfg-if",
+ "windows-sys 0.48.0",
+]
+
+[[package]]
+name = "winreg"
+version = "0.52.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "a277a57398d4bfa075df44f501a17cfdf8542d224f0d36095a2adc7aee4ef0a5"
 dependencies = [
  "cfg-if",
  "windows-sys 0.48.0",

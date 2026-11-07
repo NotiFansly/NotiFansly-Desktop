@@ -39,6 +39,18 @@ success → dashboard) without touching a server.
 connected account, sync key, appearance, onboarding-completed flag.
 Written temp-then-rename; see `src/state.rs`.
 
+## Packaging details
+
+- `build.rs` embeds `assets/icon.rc` (exe icon + VERSIONINFO) on Windows
+  targets via embed-resource; a multi-size `assets/icon.ico` regenerates
+  from the brand PNG.
+- Release builds set the Windows GUI subsystem
+  (`#![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]`)
+  so no console window spawns; debug keeps it for logs.
+- The release workflow assembles the macOS `.app` (Info.plist + icns
+  generated from `assets/icon.png` with sips/iconutil) and ad-hoc signs
+  the bundle.
+
 ## Windows / macOS notes
 
 - **A Windows *release* binary cannot be cross-compiled from Linux.**
