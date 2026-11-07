@@ -14,7 +14,7 @@ reqwest = { version = "0.11", default-features = false, features = ["json", "rus
 tokio = { version = "1", features = ["rt-multi-thread"] }
 dirs = "6.0"
 webbrowser = "1.1"
-tray-icon = "0.21.3"
+tray-icon = { version = "0.21.3", default-features = false }
 auto-launch = "0.6.0"
 image = { version = "0.25", default-features = false, features = ["png"] }
 
