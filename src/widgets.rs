@@ -252,13 +252,15 @@ fn button_on<V: Render>(
 }
 
 /// Small state pill (yap-a-thon's status chip): rounded-full, bg-coloured
-/// inset so the tone reads from the edge of a screen.
+/// inset so the tone reads from the edge of a screen. Kept SHORT - a pill
+/// is a status tone, not a sentence.
 pub fn pill(id: &str, label: &str, color: gpui::Hsla) -> impl IntoElement {
     let t = crate::theme::appearance();
     div()
         .id(ElementId::Name(SharedString::from(id.to_string())))
         .flex()
         .items_center()
+        .flex_shrink()
         .h(px(24.0))
         .px_2()
         .rounded_full()

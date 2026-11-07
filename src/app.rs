@@ -560,15 +560,16 @@ impl RootView {
                         div()
                             .flex()
                             .flex_row()
-                            .items_center()
+                            .items_start()
                             .gap_3()
                             .child(
                                 div()
                                     .flex()
                                     .items_center()
                                     .justify_center()
-                                    .w(px(20.0))
-                                    .h(px(20.0))
+                                    .flex_shrink()
+                                    .w(px(22.0))
+                                    .h(px(22.0))
                                     .rounded_full()
                                     .bg(t.accent_dim)
                                     .border_1()
@@ -581,6 +582,8 @@ impl RootView {
                             .child(
                                 div()
                                     .flex_1()
+                                    .min_w(px(0.0))
+                                    .overflow_hidden()
                                     .text_size(text::BODY)
                                     .text_color(t.muted)
                                     .child(text_value.to_string()),
@@ -668,6 +671,8 @@ impl RootView {
             .child(
                 div()
                     .flex_1()
+                    .min_w(px(0.0))
+                    .overflow_hidden()
                     .text_size(text::LABEL)
                     .text_color(t.muted)
                     .child(format!("Sync API: {}", self.client.api_url())),
@@ -703,9 +708,14 @@ impl RootView {
             .unwrap_or_else(|| "unknown".to_string());
         let (token_label, token_color) = match token_status.as_str() {
             "active" => ("● TOKEN ACTIVE", t.success),
-            "invalid" => ("● TOKEN INVALID — reconnect with a fresh link", t.danger),
-            "expired" => ("● TOKEN EXPIRED — reconnect with a fresh link", t.warning),
+            "invalid" => ("● TOKEN INVALID", t.danger),
+            "expired" => ("● TOKEN EXPIRED", t.warning),
             _ => ("○ STATUS UNKNOWN", t.muted),
+        };
+        // A pill is a tone, not a sentence; the actionable wording goes here.
+        let token_note = match token_status.as_str() {
+            "invalid" | "expired" => Some("Reconnect with a fresh management session link."),
+            _ => None,
         };
 
         let last_sync = self
@@ -801,6 +811,7 @@ impl RootView {
                             .text_color(t.text)
                             .child(format!("@{username}")),
                     )
+                    .children(token_note.map(|n| note(n)))
                     .children(rows.into_iter().map(|(label, value)| {
                         div()
                             .flex()
@@ -809,16 +820,25 @@ impl RootView {
                             .justify_between()
                             .gap_2()
                             .pt_2()
-                            .child(div().text_size(text::LABEL).text_color(t.muted).child(label))
                             .child(
                                 div()
+                                    .flex_shrink()
+                                    .text_size(text::LABEL)
+                                    .text_color(t.muted)
+                                    .child(label.to_string()),
+                            )
+                            .child(
+                                div()
+                                    .flex_1()
+                                    .min_w(px(0.0))
+                                    .overflow_hidden()
                                     .text_size(text::LABEL)
                                     .text_color(if label == "Discord" && value == "not linked" {
                                         t.muted
                                     } else {
                                         t.text
                                     })
-                                    .child(value),
+                                    .child(value.clone()),
                             )
                     })),
             )
@@ -856,7 +876,8 @@ impl RootView {
                             .child(
                                 div()
                                     .flex_1()
-                                    .min_w_0()
+                                    .min_w(px(0.0))
+                                    .overflow_hidden()
                                     .text_size(text::BODY)
                                     .font_weight(FontWeight::SEMIBOLD)
                                     .text_color(t.text)
