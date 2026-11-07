@@ -51,8 +51,9 @@ fn main() {
             // NSApp pumps its event loop). Keep it alive for the process.
             #[cfg(target_os = "macos")]
             {
-                let tray = tray::main_thread_tray();
-                std::mem::forget(tray);
+                // Creates + parks the TrayIcon in the thread-local,
+                // lived in by this (main) thread via the poller below.
+                tray::main_thread_tray();
             }
 
             let options = WindowOptions {
@@ -70,6 +71,9 @@ fn main() {
             // Initial status fetch (no-op when not connected) + the 1-minute
             // background refresh loop.
             root.update(cx, |root, cx| {
+                // Grey the tray icon out until a status fetch says otherwise
+                // (connected startups flip it to normal on the first refresh).
+                root.apply_tray_tone();
                 root.refresh_status(cx);
                 root.schedule_periodic_refresh(cx);
             });
@@ -95,6 +99,9 @@ fn main() {
                     // Poll tray commands and forward them to the window.
                     std::mem::forget(cx.spawn(async move |cx: &mut AsyncApp| {
                         loop {
+                            // macOS: applies pending tray tone changes on
+                            // this (main) thread. No-op elsewhere.
+                            tray::apply_tone_if_changed();
                             while let Ok(cmd) = tray_rx.try_recv() {
                                 match cmd {
                                     TrayCommand::Show => {

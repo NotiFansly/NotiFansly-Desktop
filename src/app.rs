@@ -178,6 +178,23 @@ impl RootView {
         self.saved.is_connected()
     }
 
+    /// Map the server's token health to the tray icon tone and apply it.
+    fn tray_tone_from(status: &StatusResponse) -> crate::tray::Tone {
+        match status.token_status.as_str() {
+            "active" => crate::tray::Tone::Ok,
+            "invalid" | "expired" => crate::tray::Tone::Alert,
+            _ => crate::tray::Tone::Muted,
+        }
+    }
+
+    pub fn apply_tray_tone(&mut self) {
+        let tone = match (&self.screen, &self.status) {
+            (Screen::Dashboard, Some(status)) => Self::tray_tone_from(status),
+            _ => crate::tray::Tone::Muted,
+        };
+        crate::tray::set_tone(tone);
+    }
+
     // -- demo mode ------------------------------------------------------------
     // Canned data so the whole flow (connect -> success -> dashboard ->
     // sync now) can be previewed and screenshotted without a server.
@@ -346,6 +363,7 @@ impl RootView {
                 let _ = view.update(cx, |this, cx| {
                     this.status = Some(Self::demo_status(false));
                     this.error = None;
+                    this.apply_tray_tone();
                     cx.notify();
                 });
             });
@@ -362,6 +380,7 @@ impl RootView {
                 Ok(s) => {
                     this.status = Some(s);
                     this.error = None;
+                    this.apply_tray_tone();
                     cx.notify();
                 }
                 Err(e) => this.set_error(e, cx),
@@ -399,6 +418,7 @@ impl RootView {
                 let _ = view.update(cx, |this, cx| {
                     this.syncing = false;
                     this.status = Some(Self::demo_status(true));
+                    this.apply_tray_tone();
                     this.set_notice("Server sync finished.", cx);
                 });
             });
@@ -455,6 +475,7 @@ impl RootView {
                     .update(cx, |this, cx| match result {
                         Ok(s) => {
                             this.status = Some(s);
+                            this.apply_tray_tone();
                             if done {
                                 this.syncing = false;
                                 this.set_notice("Server sync finished.", cx);
@@ -605,6 +626,7 @@ impl RootView {
         self.syncing = false;
         self.reveal_key = false;
         self.screen = Screen::Connect;
+        crate::tray::set_tone(crate::tray::Tone::Muted);
         self.set_notice(
             "Disconnected on this device. The server keeps your account - paste a fresh management link to reconnect.",
             cx,

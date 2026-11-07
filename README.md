@@ -48,6 +48,14 @@ menu → **Quit**.
 | Sync now | Asks the server to sync immediately |
 | Quit | Fully closes the app |
 
+The icon's colour is also a status signal:
+
+| Icon | Meaning |
+| --- | --- |
+| Normal colors | Everything is working |
+| Red | Your management link has expired or been revoked — open the app and reconnect with a fresh one |
+| Greyed out | Not connected yet (or the app can't reach the server) |
+
 ## Sync key (what it is, where to use it)
 
 Your **sync key** is shown on the main screen, with a Copy button. It does
