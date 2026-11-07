@@ -1,88 +1,92 @@
 # NotiFansly Desktop
 
-Cross-platform (Linux, macOS, Windows) GPUI desktop app that links a Fansly
-creator account to NotiFansly using **management link tokens** — no passwords,
-no API keys. After a one-time connect, all sync (subscription tiers,
-followers, subscribers) runs **server-side**; the app is a thin management and
-status client that lives in your system tray.
+The NotiFansly desktop app for Fansly creators. Connect your account once
+and your Fansly tiers, followers and subscribers sync to NotiFansly
+automatically — you don't need to keep anything open.
 
-![status: v0.1](https://img.shields.io/badge/version-0.1-blue)
+## Download
 
-## Features
+Grab the one for your computer from the
+[Releases page](https://github.com/NotiFansly/NotiFansly-Desktop/releases):
 
-- **First-launch onboarding** — a 3-step wizard for non-technical users:
-  welcome → how to create a Fansly management link (with an "Open Fansly"
-  shortcut) → paste it. Each step fades in; progress dots show where you
-  are; it never repeats after completion.
-- **Connect via Fansly management link** — paste the management session link
-  from your Fansly creator dashboard, press Connect. The (single-use) link is
-  claimed by the API and the session is stored server-side, encrypted at rest.
-- **Connected success state** — after connecting (or recovering), a
-  full-screen "You're connected!" step tells users they can simply close the
-  window; sync continues from the system tray on its own.
-- **Account recovery** — reinstalling or moving devices? Paste a fresh
-  management link: your existing account and sync key are found and restored.
-- **System tray** — close the window and the app keeps running in the tray
-  (Show / Sync now / Quit). Sync is server-side, so a parked window is fine.
-- **Optional launch at login** — one click in the dashboard footer (XDG
-  autostart on Linux, LaunchAgent on macOS, Run registry key on Windows),
-  pointing at wherever the binary currently lives.
-- **Status at a glance** — management-token health, last server sync time,
-  Discord linking, and a masked sync key with copy/reveal.
-- **Light / dark mode** — toggle in the header, persisted per device. The
-  palette follows the yap-a-thon dock theme (surface cards, status pills,
-  named text sizes, brand-blue #2699f6 accent).
-- **No secrets in the binary** — the app talks to the public desktop
-  endpoints of the sync API (/api/v1/desktop/*); no shared server secrets.
+| Your computer | File to download |
+| --- | --- |
+| Windows | `notifansly-desktop-windows-x86_64.zip` |
+| macOS (Apple Silicon) | `notifansly-desktop-macos-aarch64.zip` |
+| Linux | `notifansly-desktop-linux-x86_64.zip` |
 
-## Endpoints used (Go sync API)
+Unzip it and run the app inside. On macOS, the first time you open it,
+right-click it and choose **Open** (once), then it opens normally after that.
 
-| Endpoint | Auth | Purpose |
-| --- | --- | --- |
-| `POST /api/v1/desktop/connect` | single-use Fansly management claim link | link + recover (returns your sync key) |
-| `POST /api/v1/desktop/status` | sync key | account/token/last-sync status |
-| `POST /api/v1/desktop/trigger-sync` | sync key | kick off a server-side sync |
+## First launch
 
-## Configuration
+The app walks you through it — three screens:
 
-State lives in `<config dir>/notifansly-desktop/state.json` (0600): the
-connected account, its sync key, and the API server URL (default
-`https://api.notifansly.xyz`, editable in the UI footer).
+1. **Welcome** — a quick intro.
+2. **Create your management link** — you'll open your Fansly account's
+   Management Sessions page and click **Create Session**. You can leave every
+   permission unchecked (unchecking all of them is correct — syncing doesn't
+   need any). The app has a button that opens the right Fansly page for you.
+3. **Paste your link** — paste the link Fansly gave you and press **Connect**.
 
-Environment override: `NOTIFANSLY_API_URL` is not used by this app — the API
-URL is edited in the UI and persisted per-device.
+That's it. Your account is now connected and syncing happens on NotiFansly's
+servers, all by itself.
 
-## Building
+> Moved to a new computer, or reinstalled? Just create a fresh management
+> link in Fansly and paste it — the app finds your existing account and
+> restores your sync key automatically.
 
-```sh
-cargo build            # debug
-cargo build --release  # cargo-release profile is stripped + LTO
-```
+## The system tray (the icon near your clock)
 
-Linux tray dependencies (Arch, adjust for your distro):
-`gtk3 libayatana-appindicator` (or `libappindicator-gtk3`); on Debian/Ubuntu:
-`libayatana-appindicator3-dev libgtk-3-dev` to build.
+Closing the window **doesn't quit the app** — it keeps running quietly in
+the tray so your sync never stops. To actually quit, use the tray icon's
+menu → **Quit**.
 
-Cross-platform release builds (Linux, Windows, macOS) are produced by
-`.github/workflows/release.yml` - push a `vX.Y.Z` tag or trigger it in the
-Actions tab, and zips land on the GitHub release.
+| Tray menu item | What it does |
+| --- | --- |
+| Show NotiFansly | Brings the window back |
+| Sync now | Asks the server to sync immediately |
+| Quit | Fully closes the app |
 
-## Notes
+## Sync key (what it is, where to use it)
 
-- Closing the window **minimizes** it (GPUI has no true hide-to-tray API in
-  this release); use tray → Quit to exit.
-- Old AccountManager (Tauri) app users: your Fansly auth-token flow still
-  works against `/api/v1/sync`, but this app replaces it with management
-  links + server-side sync.
+Your **sync key** is shown on the main screen, with a Copy button. It does
+two things:
 
-## Demo mode
+- Paste it into the [NotiFansly web dashboard](https://notifansly.xyz) under
+  **Settings** to link your Discord account.
+- It restores your account if you ever reinstall the app — save a copy
+  somewhere safe and don't share it with anyone.
 
-```sh
-cargo run -- --demo      # or: NOTIFANSLY_DEMO=1
-```
+## Options
 
-Canned data (`@aureliaf`, active token, linked Discord) with no network:
-connect accepts any text, status/sync are simulated, and the whole flow
-(onboarding -> success -> dashboard) can be previewed and screenshotted
-without touching a server. Delete `~/.config/notifansly-desktop/state.json`
-to start over.
+- **Launch at login** — a button on the main screen, off by default.
+- **Light / dark mode** — the moon/sun button in the top-right corner.
+
+## Where your data lives
+
+The app keeps one small file with your connected account and sync key:
+
+| System | Location |
+| --- | --- |
+| Windows | `C:\Users\<you>\AppData\Roaming\notifansly-desktop\state.json` |
+| macOS | `~/Library/Application Support/notifansly-desktop/state.json` |
+| Linux | `~/.config/notifansly-desktop/state.json` |
+
+Nothing else is stored on your computer, and the file is only readable by
+your user account. Want a fresh start? Quit the app and delete that file —
+you'll get the first-launch wizard again.
+
+## If something looks wrong
+
+- **"Token invalid/expired"** — Fansly management links don't last forever.
+  Go back to Fansly, create a new management link, and connect it again
+  (same as the first time — your account and key are found automatically).
+- **A sync won't trigger** — check your internet connection, then press
+  **Refresh**.
+- Anything else: reach out on the NotiFansly Discord.
+
+---
+
+*Developers: build instructions and internals live in
+[DEVELOPMENT.md](DEVELOPMENT.md).*
