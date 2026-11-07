@@ -92,13 +92,20 @@ impl RootView {
 
         let connected = saved.is_connected();
         let onboarded = saved.onboarded.unwrap_or(false);
-        let initial = if !onboarded {
+        let mut initial = if !onboarded {
             Screen::Onboarding(0)
         } else if connected {
             Screen::Dashboard
         } else {
             Screen::Connect
         };
+        // Dev knob for screenshotting a specific wizard step:
+        // NOTIFANSLY_ONBOARD_STEP=1 --demo
+        if let Ok(step) = std::env::var("NOTIFANSLY_ONBOARD_STEP") {
+            if let Ok(n) = step.parse::<u32>() {
+                initial = Screen::Onboarding(n.min(ONBOARDING_STEPS - 1));
+            }
+        }
 
         cx.new(|cx| {
             // Enter in the claim input submits; Enter in the API-URL editor saves.
@@ -896,10 +903,14 @@ impl RootView {
                             .flex()
                             .flex_col()
                             .gap_2()
+                            // flex_1 in the row: this column takes the row's
+                            // remaining width, and the inner overflow-hidden
+                            // makes the text wrap inside it. (flex_1 on the
+                            // inner div would size its height, not width.)
+                            .flex_1()
+                            .min_w(px(0.0))
                             .child(
                                 div()
-                                    .flex_1()
-                                    .min_w(px(0.0))
                                     .overflow_hidden()
                                     .text_size(text::BODY)
                                     .text_color(t.text)
